@@ -1,4 +1,4 @@
-# ⚡ Trappy Programming Language
+# Trappy
 
 <p align="center">
   <img src="https://img.shields.io/badge/Status-In%20Active%20Development-blue?style=for-the-badge" alt="Status: In Active Development">
@@ -11,18 +11,18 @@
 
 ---
 
-## 🌟 Why Trappy?
+## Why Trappy?
 
-* 🎯 **Human-Readable Syntax:** Clear, noise-free block structure (`trst` to `tren`) without semicolon clutter.
-* 🎮 **Built-in 2D Game Engine:** Native desktop windows (`cwin`), shapes (`circ`, `regle`), and **Calm FPS** hardware sync (`fps calm`) to prevent CPU overheating and stutter.
-* 🛡️ **Cybersecurity & Systems Ready:** Native support for Hex literals (`0xFF`), bitwise operations (`band`, `bor`, `bxor`), and live network socket port scanners (`net_scan`).
-* 📦 **Custom Object Manifests:** Full Object-Oriented dot notation (`player.x`, `player.hp`) registered via an explicit manifest header (`add_obj`, `add_var`).
-* 🏷️ **Categorized Function System:** Built-in semantic prefixes that tag the exact purpose of every function (`fmh` for Math, `fnet` for Networking, `fsec` for Security, `fdel` for Memory Cleanup).
-* 🔒 **Anti-Exploit Sandbox:** Native protection against directory traversal attacks (`sanitize_path`) and recursion bombs.
+*  **Human-Readable Syntax:** Clear noise-free block structure (`trst` to `tren`) without semicolon clutter.
+*  **Built-in 2D Game Engine:** Native desktop windows (`cwin`), shapes (`circ`, `regle`), and **Calm FPS** hardware sync (`fps calm`) to prevent CPU overheating and stutter. (why did i wrote this)
+*  **Cybersecurity & Systems Ready:** Native support for Hex literals (`0xFF`), bitwise operations (`band`, `bor`, `bxor`), and live network socket port scanners (`net_scan`). (honestly why did i added this too)
+*  **Custom Object Manifests:** Full Object-Oriented dot notation (`player.x`, `player.hp`) registered via an explicit manifest header (`add_obj`, `add_var`). 
+*  **Categorized Function System:** Built-in semantic prefixes that tag the exact purpose of every function (`fmh` for Math, `fnet` for Networking, `fsec` for Security, `fdel` for Memory Cleanup).
+*  **Anti-Exploit Sandbox:** Native protection against directory traversal attacks (`sanitize_path`) and recursion bombs. (anddd i exposed it)
 
 ---
 
-## 🕹️ Code Showcases
+## Code Showcases
 
 ### 1. Hello World & Text
 ```trappy
@@ -97,17 +97,17 @@ tren
 
 ---
 
-## 💻 Trappy Studio (`TrappyIDE.exe`)
+##  Trappy Studio (`TrappyIDE.exe`)
 
 Trappy comes with its own dedicated standalone desktop editor:
 - **Dark Mode Studio:** Customized for Trappy code with auto-line numbers.
 - **Syntax Highlighting:** Instant color categorization for blocks, keywords, numbers, and strings.
 - **One-Click Run (F5):** Runs code and streams output directly into an integrated bottom console.
 - **One-Click Debugger (F6):** Analyzes the AST tree and pinpoints exact error lines before execution.
-
+also i will upload everything in here only after developing
 ---
 
-## 🗺️ Project Roadmap
+##  Project Roadmap
 
 - [x] Custom Lexer & Pratt Recursive Descent Parser
 - [x] Semantic Function Family (`fmh`, `ftxt`, `fnet`, `fdel`, `fui`)
@@ -121,8 +121,8 @@ Trappy comes with its own dedicated standalone desktop editor:
 
 ---
 
-## 📄 License & Status
+## License & Status
 
 Trappy is currently in **Active Private Development**. Source files and builds will be released as core milestones are finalized.
 
-*Designed and crafted with passion by the Trappy Team.*
+*Designed and crafted with passion by me*
