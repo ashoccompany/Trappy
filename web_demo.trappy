@@ -1,0 +1,22 @@
+# =====================================================================
+# TRAPPY UNIVERSAL WEB & INTERNET DEMO (.trappy)
+# Demonstrating:
+# 1. Real-time HTTP GET API Request
+# 2. Downloading Web Files & Packages directly from the Internet
+# =====================================================================
+trst
+    gan "=== TRAPPY UNIVERSAL WEB & CLIENT ENGINE ==="
+
+    # 1. HTTP GET Web API Request (Public Test API)
+    gan "1. Fetching live JSON data from API..."
+    http_get "https://api.github.com/zen" tit daily_zen
+    gan "GitHub Zen Message from Web:"
+    gan daily_zen
+
+    # 2. Downloading an Online Asset / File
+    gan "2. Downloading an online resource from the internet..."
+    download "https://raw.githubusercontent.com/octocat/Hello-World/master/README" into "downloaded_sample.txt"
+    gan "Download verified! Check 'downloaded_sample.txt' in your folder."
+
+    gan "=== Universal Internet Execution Finished Successfully ==="
+tren

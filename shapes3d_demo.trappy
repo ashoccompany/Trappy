@@ -1,0 +1,54 @@
+# =====================================================================
+# TRAPPY 3D MULTI-SHAPES ENGINE DEMO (.trappy)
+# Demonstrating:
+# 1. 3D Wireframe Cube (cube3d)
+# 2. 3D Wireframe Pyramid (pyramid3d)
+# 3. 3D Celestial Wireframe Sphere (sphere3d)
+# 4. Real-time Yaw & Pitch Interactive Rotation
+# =====================================================================
+trst
+    cwin "Trappy 3D Multi-Shape Engine" 700:500 main
+    sbgwin "Trappy 3D Multi-Shape Engine" black
+    fps calm
+
+    # Position coordinates for the 3 shapes
+    mh 180 eq cube_x
+    mh 250 eq cube_y
+    mh 0 eq cube_z
+    mh 90 eq cube_size
+
+    mh 350 eq sphere_x
+    mh 250 eq sphere_y
+    mh 0 eq sphere_z
+    mh 48 eq sphere_rad
+
+    mh 520 eq pyr_x
+    mh 250 eq pyr_y
+    mh 0 eq pyr_z
+    mh 100 eq pyr_size
+
+    # Rotation angles
+    mh 20 eq rot_x
+    mh 30 eq rot_y
+
+    gloop
+        # 3D Scene HUD
+        label "TRAPPY 3D MULTI-SHAPE ENGINE" 350:25 cyan
+        label "CUBE (Cyan)        |     SPHERE (Green)     |    PYRAMID (Yellow)" 350:55 white
+        label "CONTROLS: [W/S] Pitch  |  [A/D] Yaw" 350:470 yellow
+
+        # Continuous auto-spin
+        mh rot_y + 1 eq rot_y
+
+        # Draw the 3D shapes side by side
+        cube3d cube_x:cube_y:cube_z cube_size rot_x:rot_y cyan
+        sphere3d sphere_x:sphere_y:sphere_z sphere_rad rot_x:rot_y green
+        pyramid3d pyr_x:pyr_y:pyr_z pyr_size rot_x:rot_y yellow
+
+        # Interactive controls
+        ifr key "W" trg then mh rot_x - 3 eq rot_x
+        ifr key "S" trg then mh rot_x + 3 eq rot_x
+        ifr key "A" trg then mh rot_y - 3 eq rot_y
+        ifr key "D" trg then mh rot_y + 3 eq rot_y
+    tren
+tren

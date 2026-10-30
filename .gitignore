@@ -1,0 +1,17 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary runner files
+_temp_run.trappy
+test_*.py
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+
+# Local IDE or editor settings
+.vscode/
+.idea/

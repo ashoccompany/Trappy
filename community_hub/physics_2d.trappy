@@ -1,0 +1,21 @@
+# =====================================================================
+# COMMUNITY PACKAGE: physics_2d.trappy
+# Standard 2D physics: velocity update and wall bounding
+# =====================================================================
+trst
+    fmh apply_gravity y:vel
+        answ y + vel
+    tren
+
+    fmh clamp_boundary pos:min_bound:max_bound
+        ifr pos lss min_bound
+            answ min_bound
+        then
+            ifr pos grt max_bound
+                answ max_bound
+            then
+                answ pos
+            tren
+        tren
+    tren
+tren

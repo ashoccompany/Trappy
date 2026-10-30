@@ -1,0 +1,44 @@
+# =====================================================================
+# ADVANCED TRAPPY DEMO (.trappy)
+# Demonstrating:
+# 1. Registry Headers (add_obj, add_var, add_func)
+# 2. Object Dot Properties (hero.hp, hero.attack)
+# 3. Collection Loop (each ... in ...)
+# =====================================================================
+trst
+    # 1. Register Manifest & Custom Objects
+    add_var "battle_round"
+    add_obj "hero"
+        name: "TrappyKnight"
+        hp: 100
+        attack: 35
+        defense: 12
+    tren
+
+    add_obj "boss"
+        name: "Dragon"
+        hp: 200
+        attack: 28
+    tren
+
+    add_func "compute_strike"
+
+    # 2. Battle Function
+    fmh compute_strike atk:def
+        answ atk - def
+    tren
+
+    # 3. Object-Oriented Combat with Dot Properties!
+    mh compute_strike hero.attack:10 eq hero_dmg
+    mh boss.hp - hero_dmg eq boss.hp
+
+    gan "Hero attacked Boss! Remaining Boss HP:"
+    gan boss.hp
+
+    # 4. Collection Loop with 'each'
+    lst "Health Potion" | "Magic Ring" | "Golden Key" eq backpack
+    gan "Inventory contents:"
+    each item in backpack
+        gan ">>> " + item
+    tren
+tren

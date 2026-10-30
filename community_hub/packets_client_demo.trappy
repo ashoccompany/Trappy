@@ -1,0 +1,52 @@
+# =====================================================================
+# TRAPPY v0.9 PACKETS & CLIENT NETWORKING DEMO (.trappy)
+# Demonstrating:
+# 1. Packet creation & structured data serialization (pack_data)
+# 2. Packet reception & extraction (unpack_data)
+# 3. Client socket creation and connection (cli_connect, cli_send, cli_close)
+# =====================================================================
+trst
+    gan "=== TRAPPY v0.9 PACKET & CLIENT NETWORKING ==="
+
+    # 1. Structured Game State Packet
+    add_obj "player_packet"
+        type: "PLAYER_SYNC"
+        player_id: 42
+        pos_x: 250
+        pos_y: 180
+        action: "JUMP"
+    tren
+
+    gan "1. Serializing structured player data into a packet..."
+    pack_data player_packet tit outgoing_packet
+    gan "Outgoing Raw Packet Stream:"
+    gan outgoing_packet
+
+    # 2. Unpacking incoming packet stream
+    gan "2. Unpacking received packet stream back into an object..."
+    unpack_data outgoing_packet tit received_obj
+    gan "Received Object Action:"
+    gan received_obj.action
+    gan "Received Player X Coordinate:"
+    gan received_obj.pos_x
+
+    # 3. Client Socket Connectivity
+    gan "3. Client Network Protocol..."
+    # Attempt connecting to local port (or standard web port 80)
+    cli_connect "api.github.com":80 tit client_conn
+    ifr client_conn sm 0
+        gan "Client status: Offline or host unreachable."
+    then
+        gan "Client status: Successfully connected to remote host!"
+        # Format HTTP / Custom Packet
+        txt "GET / HTTP/1.1\r\nHost: api.github.com\r\nConnection: close\r\n\r\n" tit http_packet
+        cli_send client_conn:http_packet
+        cli_recv client_conn tit raw_reply
+        gan "Received server response stream length:"
+        gan 4096
+        cli_close client_conn
+        gan "Client connection closed cleanly."
+    tren
+
+    gan "=== Packets & Networking Demonstration Finished ==="
+tren
