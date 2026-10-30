@@ -160,7 +160,6 @@ class TrappyIDE:
             "3D Multi-Shapes (Cube, Sphere, Pyramid)",
             "Discord & Online Connect Demo",
             "File I/O & Save System Demo",
-            "2D Arcade Game Demo",
             "RPG Stats & Inventory Demo",
             "Packets & Client Demo",
             "Web & Internet Demo",
@@ -548,7 +547,6 @@ class TrappyIDE:
             "3D Multi-Shapes (Cube, Sphere, Pyramid)": "shapes3d_demo.trappy",
             "Discord & Online Connect Demo": "discord_demo.trappy",
             "File I/O & Save System Demo": "file_io_demo.trappy",
-            "2D Arcade Game Demo": "game_demo.trappy",
             "RPG Stats & Inventory Demo": "advanced_demo.trappy",
             "Packets & Client Demo": "packets_client_demo.trappy",
             "Web & Internet Demo": "web_demo.trappy",
@@ -589,7 +587,7 @@ class TrappyIDE:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         path = os.path.join(base_dir, "shapes3d_demo.trappy")
         if not os.path.exists(path):
-            path = os.path.join(base_dir, "game3d_demo.trappy")
+            path = os.path.join(base_dir, "main.trappy")
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 self.code_text.insert("1.0", f.read())

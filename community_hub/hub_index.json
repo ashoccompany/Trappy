@@ -21,7 +21,7 @@
         },
         "packets_client_demo": {
             "version": "1.0.0",
-            "author": "ThinkPad",
+            "author": "TrappyCommunity",
             "description": "Multiplayer game state packet transmission and client networking",
             "file": "packets_client_demo.trappy"
         }
