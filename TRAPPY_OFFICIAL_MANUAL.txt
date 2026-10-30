@@ -9,7 +9,7 @@ Package Manager: tpm <command>
 Official Standalone Studio: TrappyIDE.exe
 
 OFFICIAL COMMUNITY & SOURCE LINKS:
-Discord: https://discord.gg/WRTG3spWH (Official Community Headquarters - Main Place)
+Discord: https://discord.gg/3chDfAPE9H (Official Community Headquarters - Main Place)
 GitHub:  https://github.com/ashoccompany/Trappy
 X:       https://x.com/tr4ppyai
 ================================================================================
@@ -57,7 +57,7 @@ Optimized for Ultra-Budget Hardware:
 2. HELP ANYTIME EVERYWHERE & DISCORD COMMUNITY
 ================================================================================
 Discord is the central headquarters for all things Trappy:
-- Join the Discord: https://discord.gg/WRTG3spWH
+- Join the Discord: https://discord.gg/3chDfAPE9H
 - Showcase your games, share community packages, report ideas, and get instant help.
 
 Instant Help Options:

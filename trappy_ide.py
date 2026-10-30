@@ -138,7 +138,7 @@ class TrappyIDE:
 
         discord_btn = dict(btn_style)
         discord_btn["bg"] = DISCORD_COLOR
-        tk.Button(toolbar, text="[Discord Community]", command=lambda: webbrowser.open_new_tab("https://discord.gg/WRTG3spWH"), **discord_btn).pack(side="left", padx=4, pady=5)
+        tk.Button(toolbar, text="[Discord Community]", command=lambda: webbrowser.open_new_tab("https://discord.gg/3chDfAPE9H"), **discord_btn).pack(side="left", padx=4, pady=5)
 
         hub_btn = dict(btn_style)
         hub_btn["bg"] = "#0284c7"
@@ -157,9 +157,9 @@ class TrappyIDE:
 
         tk.Label(links_bar, text="OFFICIAL CHANNELS:", bg=BG_LINKS, fg="#71717a", font=("Consolas", 8, "bold")).pack(side="left", padx=(10, 4), pady=3)
 
-        discord_link = tk.Label(links_bar, text="Discord (Main): discord.gg/WRTG3spWH", bg=BG_LINKS, fg="#a78bfa", font=("Consolas", 8, "underline"), cursor="hand2")
+        discord_link = tk.Label(links_bar, text="Discord (Main): discord.gg/3chDfAPE9H", bg=BG_LINKS, fg="#a78bfa", font=("Consolas", 8, "underline"), cursor="hand2")
         discord_link.pack(side="left", padx=8, pady=3)
-        discord_link.bind("<Button-1>", lambda e: webbrowser.open_new_tab("https://discord.gg/WRTG3spWH"))
+        discord_link.bind("<Button-1>", lambda e: webbrowser.open_new_tab("https://discord.gg/3chDfAPE9H"))
 
         github_link = tk.Label(links_bar, text="GitHub: github.com/ashoccompany/Trappy", bg=BG_LINKS, fg="#38bdf8", font=("Consolas", 8, "underline"), cursor="hand2")
         github_link.pack(side="left", padx=8, pady=3)
@@ -206,7 +206,7 @@ class TrappyIDE:
 
         self.status = tk.Label(
             self.root,
-            text="Ready | Trappy v1.0.0 Global Release | Discord: discord.gg/WRTG3spWH | Press F1 for Docs, F5 to Run",
+            text="Ready | Trappy v1.0.0 Global Release | Discord: discord.gg/3chDfAPE9H | Press F1 for Docs, F5 to Run",
             bg=BG_SIDE,
             fg="#a1a1aa",
             font=("Consolas", 9),
@@ -275,7 +275,7 @@ class TrappyIDE:
         search_entry.pack(side="left", padx=8)
         search_entry.focus_set()
 
-        tk.Label(search_frame, text="Discord Help: discord.gg/WRTG3spWH", bg=BG_SIDE, fg="#a78bfa", font=("Consolas", 9)).pack(side="right")
+        tk.Label(search_frame, text="Discord Help: discord.gg/3chDfAPE9H", bg=BG_SIDE, fg="#a78bfa", font=("Consolas", 9)).pack(side="right")
 
         content_paned = tk.PanedWindow(self.manual_win, orient="horizontal", bg=BG_DARK, sashwidth=4)
         content_paned.pack(fill="both", expand=True, padx=8, pady=8)
@@ -546,7 +546,7 @@ class TrappyIDE:
 
         self.log("=====================================================================")
         self.log("TRAPPY STUDIO IDE (v1.0.0 GLOBAL RELEASE)")
-        self.log("Discord: https://discord.gg/WRTG3spWH (Official Community Headquarters)")
+        self.log("Discord: https://discord.gg/3chDfAPE9H (Official Community Headquarters)")
         self.log("GitHub:  https://github.com/ashoccompany/Trappy")
         self.log("X:       https://x.com/tr4ppyai")
         self.log("Press F1 anytime for the Built-in Manual & Command Reference Browser")

@@ -59,7 +59,7 @@ class TrappyError(Exception):
         line_info = f"on Line {self.line}" if self.line else ""
         return (
             f"\n[TRAPPY ERROR {line_info}]: {self.message}\n"
-            f"[TRAPPY HINT]: Press F1 in IDE for Manual or ask on Discord: https://discord.gg/WRTG3spWH"
+            f"[TRAPPY HINT]: Press F1 in IDE for Manual or ask on Discord: https://discord.gg/3chDfAPE9H"
         )
 
 class TrappySecurityError(TrappyError):

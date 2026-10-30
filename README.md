@@ -8,7 +8,7 @@ Current version: **v1.0.0 (Global Release)**
 
 ## Official Community & Source Links
 
-* **Discord (Official Headquarters):** https://discord.gg/WRTG3spWH
+* **Discord (Official Headquarters):** https://discord.gg/3chDfAPE9H
 * **GitHub:** https://github.com/ashoccompany/Trappy
 * **X (Twitter):** https://x.com/tr4ppyai
 

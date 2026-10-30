@@ -179,7 +179,7 @@ if __name__ == "__main__":
             print("Usage: tpm publish <file.trappy> [author] [description]")
     elif args[0] == "discord":
         print("\nTrappy Official Community Headquarters:")
-        print("  Discord: https://discord.gg/WRTG3spWH")
+        print("  Discord: https://discord.gg/3chDfAPE9H")
         print("  Share packages, request help, showcase games, and collaborate with creators!\n")
     else:
         print(f"Unknown command: '{args[0]}'. Run 'tpm help' for usage.")

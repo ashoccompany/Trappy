@@ -7,7 +7,7 @@ Package Manager: `tpm <command>`
 Standalone Studio: `TrappyIDE.exe`  
 
 ### Official Community & Source Links
-* **Discord (Main Community Headquarters):** https://discord.gg/WRTG3spWH
+* **Discord (Main Community Headquarters):** https://discord.gg/3chDfAPE9H
 * **GitHub:** https://github.com/ashoccompany/Trappy
 * **X (Twitter):** https://x.com/tr4ppyai
 
@@ -53,7 +53,7 @@ Trappy is an expressive, universal programming language built from scratch to ma
 ## 2. Help Anytime Everywhere & Discord Community
 
 Discord is the central community headquarters for all things Trappy:
-* **Join Discord:** https://discord.gg/WRTG3spWH
+* **Join Discord:** https://discord.gg/3chDfAPE9H
 * Ask questions, showcase games, report ideas, and install community packages.
 
 ### Getting Help
