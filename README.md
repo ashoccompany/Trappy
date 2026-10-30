@@ -2,7 +2,7 @@
 
 Trappy is an independent, universal programming language built from scratch. Its guiding design law is simple: **simple needs to be simple**. Beginners can create working games, apps, and network clients immediately, while advanced creators can connect almost anything across the web and local systems without pages of configuration or third-party dependencies.
 
-Current version: **v1.0.0 (Global Release)**
+Current version: **v1.1.0 (Advanced Performance & Architecture Patch)**
 
 ---
 
@@ -174,6 +174,7 @@ tpm list                            List installed packages
 * **v0.9.0:** Structured packet engine (`pack`/`unpack`), non-blocking client/server sockets, and the TPM Community Hub.
 * **v0.9.5:** Quick Code Assist autocomplete, 3D wireframe perspective, OS memory buffers, and extended math/physics library.
 * **v1.0.0 (Global Release):** Official global launch. Discord webhooks, offline loopback bus, dynamic dictionaries, list indexing, universal file I/O, 3D multi-shapes (sphere, pyramid), AABB collision, chiptune synthesizer, F1 in-IDE documentation browser, and ultra-budget hardware frame throttling.
+* **v1.1.0 (Advanced Patch):** Major architectural refactor and benchmark optimization. Decoupled 700+ line parser into modular O(1) dispatchers, added native float literals (`3.14`), introduced first-class `else` keyword syntax, optimized tokenizer slicing from O(n^2) to O(n), zero-latency non-blocking socket polling, and added an automated 24-test suite (`tests/test_trappy.py`).
 
 ---
 

@@ -77,13 +77,15 @@ MANUAL_DATABASE = [
     ("synth", "synth wave:freq:dur", "Chiptune / wave tone synthesizer on budget hardware.", 'synth "square":440:150'),
     ("cwin", 'cwin "Title" width:height main', "Creates a hardware-accelerated canvas game window.", 'cwin "My Game" 600:400 main'),
     ("fps calm", "fps calm", "Enables hardware-calm VSync to save CPU and battery.", 'fps calm'),
-    ("gloop", "gloop ... tren", "Hardware-synchronized continuous game loop.", 'gloop\n    circ player.x:player.y 16 cyan\ntren')
+    ("gloop", "gloop ... tren", "Hardware-synchronized continuous game loop.", 'gloop\n    circ player.x:player.y 16 cyan\ntren'),
+    ("ifr", "ifr a > b ... else ... tren", "Evaluates a condition and runs branch code based on the result.", 'ifr score > 10\n    gan "Winner!"\nelse\n    gan "Keep trying!"\ntren'),
+    ("else", "else", "Defines the alternative execution block in an ifr statement when condition is false.", 'ifr health < 1\n    gan "Game Over"\nelse\n    gan "Alive"\ntren')
 ]
 
 class TrappyIDE:
     def __init__(self, root):
         self.root = root
-        self.root.title("Trappy IDE - Official Code Studio (v1.0.0 Global Release)")
+        self.root.title("Trappy IDE - Official Code Studio (v1.1.0 Patch)")
         self.root.geometry("1060x730")
         self.root.configure(bg=BG_DARK)
 
@@ -206,7 +208,7 @@ class TrappyIDE:
 
         self.status = tk.Label(
             self.root,
-            text="Ready | Trappy v1.0.0 Global Release | Discord: discord.gg/3chDfAPE9H | Press F1 for Docs, F5 to Run",
+            text="Ready | Trappy v1.1.0 Patch | Discord: discord.gg/3chDfAPE9H | Press F1 for Docs, F5 to Run",
             bg=BG_SIDE,
             fg="#a1a1aa",
             font=("Consolas", 9),
@@ -545,7 +547,7 @@ class TrappyIDE:
         self._schedule_highlight()
 
         self.log("=====================================================================")
-        self.log("TRAPPY STUDIO IDE (v1.0.0 GLOBAL RELEASE)")
+        self.log("TRAPPY STUDIO IDE (v1.1.0 PATCH RELEASE)")
         self.log("Discord: https://discord.gg/3chDfAPE9H (Official Community Headquarters)")
         self.log("GitHub:  https://github.com/ashoccompany/Trappy")
         self.log("X:       https://x.com/tr4ppyai")

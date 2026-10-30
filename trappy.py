@@ -4,6 +4,7 @@ import time
 import math
 import random
 import socket
+import select
 import urllib.request
 import urllib.parse
 import json
@@ -12,6 +13,7 @@ import queue
 
 try:
     import tkinter as tk
+    from tkinter import ttk, messagebox
 except ImportError:
     tk = None
 
@@ -19,6 +21,8 @@ try:
     import winsound
 except ImportError:
     winsound = None
+
+__version__ = "1.1.0"
 
 class VirtualLoopbackSocket:
     _channels = {}
@@ -28,76 +32,105 @@ class VirtualLoopbackSocket:
         if self.channel_id not in VirtualLoopbackSocket._channels:
             VirtualLoopbackSocket._channels[self.channel_id] = queue.Queue()
         self.q = VirtualLoopbackSocket._channels[self.channel_id]
-        self.closed = False
+        self.is_open = True
 
     def sendall(self, data):
-        if not self.closed:
-            self.q.put(data)
+        if not self.is_open:
+            return 0
+        if isinstance(data, str):
+            data = data.encode('utf-8')
+        self.q.put(data)
+        return len(data)
 
     def send(self, data):
-        self.sendall(data)
+        return self.sendall(data)
 
     def recv(self, bufsize=4096):
-        if self.closed:
+        if not self.is_open:
             return b""
         try:
             val = self.q.get_nowait()
-            return val if isinstance(val, bytes) else str(val).encode('utf-8')
+            return val
         except queue.Empty:
             return b""
 
     def close(self):
-        self.closed = True
+        self.is_open = False
 
 class TrappyError(Exception):
     def __init__(self, message, line=None):
         self.message = message
         self.line = line
-        super().__init__(self.__str__())
-
-    def __str__(self):
-        line_info = f"on Line {self.line}" if self.line else ""
-        return (
-            f"\n[TRAPPY ERROR {line_info}]: {self.message}\n"
-            f"[TRAPPY HINT]: Press F1 in IDE for Manual or ask on Discord: https://discord.gg/3chDfAPE9H"
-        )
+        super().__init__(f"[Trappy Error at line {line}]: {message}" if line else f"[Trappy Error]: {message}")
 
 class TrappySecurityError(TrappyError):
-    def __str__(self):
-        line_info = f"on Line {self.line}" if self.line else ""
-        return (
-            f"\n[TRAPPY SECURITY ALERT] Threat Blocked {line_info}!\n"
-            f"[TRAPPY]: Exploit/Violation prevented: {self.message}"
-        )
+    def __init__(self, message, line=None):
+        hint = "[TRAPPY HINT]: Press F1 in IDE for Manual or ask on Discord: https://discord.gg/3chDfAPE9H"
+        super().__init__(f"SECURITY VIOLATION: {message}\n{hint}", line)
+
+class ReturnSignal(Exception):
+    def __init__(self, value):
+        self.value = value
+
+class BreakSignal(Exception):
+    def __init__(self, loop_type):
+        self.loop_type = loop_type
 
 def sanitize_path(filename, base_dir=None):
     if base_dir is None:
         base_dir = os.getcwd()
-    abs_base = os.path.abspath(base_dir)
-    target = os.path.abspath(os.path.join(abs_base, filename))
-    if not target.startswith(abs_base):
+    base_dir = os.path.abspath(base_dir)
+    target_path = os.path.abspath(os.path.join(base_dir, filename))
+    if not (target_path == base_dir or target_path.startswith(base_dir + os.sep)):
         raise TrappySecurityError(f"Path Traversal attempt blocked: '{filename}'")
-    return target
+    return target_path
 
 class Token:
-    def __init__(self, kind, val, line):
+    def __init__(self, kind, val, line=0):
         self.kind = kind
         self.val = val
         self.line = line
 
     def __repr__(self):
-        return f"Token({self.kind}, {self.val}, Line:{self.line})"
+        return f"Token({self.kind}, {repr(self.val)}, L{self.line})"
 
 def tokenize(code):
     tokens = []
+    line = 1
     i = 0
     n = len(code)
-    line = 1
+
+    keywords = {
+        "trst", "tren", "fmh", "fdel", "ftxt", "flist", "frep", "floop",
+        "fgui", "fui", "fdrw", "fgfx", "fcan", "fweb", "fcli", "fapp", "f3d", "fos",
+        "mh", "eq", "rt", "answ", "out", "gan", "trg", "trged", "multi", "div",
+        "sqrt", "pow", "abs", "sin", "cos", "dist", "clamp",
+        "box_hit", "vec_add", "vec_mag",
+        "band", "bor", "bxor", "bnot", "bshl", "bshr",
+        "http_get", "http_post", "download", "discord_webhook",
+        "ws_connect", "ws_send", "ws_recv", "ws_close",
+        "json_parse", "json_dump",
+        "pack", "unpack", "pack_data", "unpack_data",
+        "cli_connect", "cli_send", "cli_recv", "cli_close",
+        "srv_listen", "srv_accept",
+        "dict", "dset", "dget", "dkeys",
+        "lst", "lget", "lset", "llen", "lpush", "lpop",
+        "file_write", "file_read", "file_append", "file_exists", "file_delete", "dir_list",
+        "ifr", "then", "else", "grt", "lss", "sm", "exst", "exist",
+        "rep", "loop", "srep", "sloop", "txt", "tit", "inf", "ath",
+        "add_var", "add_func", "add_obj", "add_type", "spawn", "as",
+        "cwin", "swin", "sbgwin", "label", "regle", "circ", "line",
+        "cube3d", "line3d", "point3d", "sphere3d", "pyramid3d",
+        "mem_alloc", "mem_write", "mem_read", "sys_exec", "sys_env",
+        "btn", "inp", "psed", "changed", "gloop", "fps", "calm", "lock", "unlock",
+        "key", "flkey", "mousel", "mouser", "mousesp", "collde", "collide",
+        "hrable", "play", "beep", "synth", "rnd", "write", "into", "each", "in"
+    }
 
     while i < n:
         c = code[i]
 
-        if c == '\n':
+        if c == "\n":
             line += 1
             i += 1
             continue
@@ -114,19 +147,39 @@ def tokenize(code):
         if c == '"':
             start_line = line
             i += 1
-            str_val = ""
+            start_s = i
             while i < n and code[i] != '"':
                 if code[i] == '\n':
                     line += 1
-                str_val += code[i]
                 i += 1
             if i >= n:
                 raise TrappyError("Unclosed string quote", start_line)
+            str_val = code[start_s:i]
             i += 1
             tokens.append(Token("STR", str_val, start_line))
             continue
 
-        if c in "():+=|,":
+        if c == '=' and i + 1 < n and code[i + 1] == '=':
+            tokens.append(Token("==", "==", line))
+            i += 2
+            continue
+
+        if c == '!' and i + 1 < n and code[i + 1] == '=':
+            tokens.append(Token("!=", "!=", line))
+            i += 2
+            continue
+
+        if c == '>' and i + 1 < n and code[i + 1] == '=':
+            tokens.append(Token(">=", ">=", line))
+            i += 2
+            continue
+
+        if c == '<' and i + 1 < n and code[i + 1] == '=':
+            tokens.append(Token("<=", "<=", line))
+            i += 2
+            continue
+
+        if c in "():+=|,><":
             tokens.append(Token(c, c, line))
             i += 1
             continue
@@ -143,53 +196,36 @@ def tokenize(code):
 
         if c == '0' and i + 1 < n and code[i+1].lower() == 'x':
             i += 2
-            hex_str = ""
+            start_hex = i
             while i < n and (code[i].isdigit() or code[i].lower() in "abcdef"):
-                hex_str += code[i]
                 i += 1
+            hex_str = code[start_hex:i]
             tokens.append(Token("NUM", int(hex_str, 16) if hex_str else 0, line))
             continue
 
-        if c.isdigit():
-            num = ""
-            while i < n and code[i].isdigit():
-                num += code[i]
+        if c.isdigit() or (c == '.' and i + 1 < n and code[i + 1].isdigit()):
+            start_num = i
+            is_float = False
+            if c == '.':
+                is_float = True
                 i += 1
-            tokens.append(Token("NUM", int(num), line))
+            while i < n and code[i].isdigit():
+                i += 1
+            if not is_float and i < n and code[i] == '.' and i + 1 < n and code[i + 1].isdigit():
+                is_float = True
+                i += 1
+                while i < n and code[i].isdigit():
+                    i += 1
+            num_str = code[start_num:i]
+            num_val = float(num_str) if is_float else int(num_str)
+            tokens.append(Token("NUM", num_val, line))
             continue
 
         if c.isalpha() or c == "_":
-            word = ""
+            start_w = i
             while i < n and (code[i].isalnum() or code[i] == "_"):
-                word += code[i]
                 i += 1
-
-            keywords = (
-                "trst", "tren", "fmh", "fdel", "ftxt", "flist", "frep", "floop",
-                "fgui", "fui", "fdrw", "fgfx", "fcan", "fweb", "fcli", "fapp", "f3d", "fos",
-                "mh", "eq", "rt", "answ", "out", "gan", "trg", "trged", "multi", "div",
-                "sqrt", "pow", "abs", "sin", "cos", "dist", "clamp",
-                "box_hit", "vec_add", "vec_mag",
-                "band", "bor", "bxor", "bnot", "bshl", "bshr",
-                "http_get", "http_post", "download", "discord_webhook",
-                "ws_connect", "ws_send", "ws_recv", "ws_close",
-                "json_parse", "json_dump",
-                "pack", "unpack", "pack_data", "unpack_data",
-                "cli_connect", "cli_send", "cli_recv", "cli_close",
-                "srv_listen", "srv_accept",
-                "dict", "dset", "dget", "dkeys",
-                "lst", "lget", "lset", "llen", "lpush", "lpop",
-                "file_write", "file_read", "file_append", "file_exists", "file_delete", "dir_list",
-                "ifr", "then", "else", "grt", "lss", "sm", "exst", "exist",
-                "rep", "loop", "srep", "sloop", "txt", "tit", "inf", "ath",
-                "add_var", "add_func", "add_obj", "add_type", "spawn", "as",
-                "cwin", "swin", "sbgwin", "label", "regle", "circ", "line",
-                "cube3d", "line3d", "point3d", "sphere3d", "pyramid3d",
-                "mem_alloc", "mem_write", "mem_read", "sys_exec", "sys_env",
-                "btn", "inp", "psed", "changed", "gloop", "fps", "calm", "lock", "unlock",
-                "key", "flkey", "mousel", "mouser", "mousesp", "collde", "collide",
-                "hrable", "play", "beep", "synth", "rnd", "write", "into", "each", "in"
-            )
+            word = code[start_w:i]
             if word in keywords:
                 tokens.append(Token(word.upper(), word, line))
             else:
@@ -209,6 +245,82 @@ class Parser:
         self.known_variables = set()
         self.blueprints = {}
 
+        self._dispatch = {
+            "ADD_VAR": self._parse_add_var,
+            "ADD_FUNC": self._parse_add_func,
+            "ADD_OBJ": self._parse_add_obj,
+            "ADD_TYPE": self._parse_add_type,
+            "FDEL": self._parse_fdel,
+            "TRG": self._parse_trg,
+            "CWIN": self._parse_cwin,
+            "SWIN": self._parse_cwin,
+            "SBGWIN": self._parse_sbgwin,
+            "LABEL": self._parse_label,
+            "REGLE": self._parse_regle,
+            "CIRC": self._parse_circ,
+            "LINE": self._parse_line,
+            "CUBE3D": self._parse_cube3d,
+            "LINE3D": self._parse_line3d,
+            "SPHERE3D": self._parse_sphere3d,
+            "PYRAMID3D": self._parse_pyramid3d,
+            "BTN": self._parse_btn,
+            "INP": self._parse_inp,
+            "GLOOP": self._parse_gloop,
+            "FPS": self._parse_fps,
+            "PLAY": self._parse_play,
+            "BEEP": self._parse_beep,
+            "SYNTH": self._parse_synth,
+            "WRITE": self._parse_write,
+            "HTTP_GET": self._parse_http_get,
+            "HTTP_POST": self._parse_http_post,
+            "DOWNLOAD": self._parse_download,
+            "CLI_CONNECT": self._parse_cli_connect,
+            "CLI_SEND": self._parse_cli_send,
+            "CLI_RECV": self._parse_cli_recv,
+            "CLI_CLOSE": self._parse_cli_close,
+            "SRV_LISTEN": self._parse_srv_listen,
+            "SRV_ACCEPT": self._parse_srv_accept,
+            "MEM_ALLOC": self._parse_mem_alloc,
+            "MEM_WRITE": self._parse_mem_write,
+            "MEM_READ": self._parse_mem_read,
+            "SYS_EXEC": self._parse_sys_exec,
+            "SYS_ENV": self._parse_sys_env,
+            "DISCORD_WEBHOOK": self._parse_discord_webhook,
+            "WS_CONNECT": self._parse_ws_connect,
+            "WS_SEND": self._parse_ws_send,
+            "WS_RECV": self._parse_ws_recv,
+            "WS_CLOSE": self._parse_ws_close,
+            "JSON_PARSE": self._parse_json_parse,
+            "JSON_DUMP": self._parse_json_dump,
+            "DICT": self._parse_dict,
+            "DSET": self._parse_dset,
+            "DGET": self._parse_dget,
+            "DKEYS": self._parse_dkeys,
+            "LGET": self._parse_lget,
+            "LSET": self._parse_lset,
+            "LLEN": self._parse_llen,
+            "LPUSH": self._parse_lpush,
+            "LPOP": self._parse_lpop,
+            "FILE_WRITE": self._parse_file_write,
+            "FILE_READ": self._parse_file_read,
+            "FILE_APPEND": self._parse_file_append,
+            "FILE_EXISTS": self._parse_file_exists,
+            "FILE_DELETE": self._parse_file_delete,
+            "DIR_LIST": self._parse_dir_list,
+            "BOX_HIT": self._parse_box_hit,
+            "VEC_ADD": self._parse_vec_add,
+            "VEC_MAG": self._parse_vec_mag,
+            "EACH": self._parse_each,
+            "IFR": self._parse_ifr,
+            "REP": self._parse_rep,
+            "LOOP": self._parse_loop,
+            "SREP": self._parse_srep,
+            "SLOOP": self._parse_sloop,
+            "TXT": self._parse_txt,
+            "LST": self._parse_lst,
+            "MH": self._parse_mh
+        }
+
     def peek(self):
         return self.tokens[self.pos]
 
@@ -221,737 +333,789 @@ class Parser:
 
     def parse_program(self):
         self.consume("TRST")
-        statements = []
+        stmts = []
         while self.peek().kind not in ("TREN", "EOF"):
-            statements.append(self.parse_statement())
+            stmts.append(self.parse_statement())
         self.consume("TREN")
-        return ("PROGRAM", statements)
+        return ("PROGRAM", stmts)
 
     def parse_statement(self):
         tok = self.peek()
+        handler = self._dispatch.get(tok.kind)
+        if handler:
+            return handler(tok)
+        return self._parse_function_or_call(tok)
 
-        if tok.kind == "ADD_VAR":
-            self.consume("ADD_VAR")
-            var_name = self.consume_name_or_str()
-            self.known_variables.add(var_name)
-            type_name = None
-            if self.peek().kind == "AS":
-                self.consume("AS")
-                type_name = self.consume_name_or_str()
-            return ("ADD_VAR", var_name, type_name, tok.line)
+    def _parse_add_var(self, tok):
+        self.consume("ADD_VAR")
+        name = self.consume_name_or_str()
+        self.known_variables.add(name)
+        return ("ADD_VAR", name, tok.line)
 
-        if tok.kind == "ADD_FUNC":
-            self.consume("ADD_FUNC")
-            fn_name = self.consume_name_or_str()
-            self.known_functions.add(fn_name)
-            return ("ADD_FUNC", fn_name, tok.line)
+    def _parse_add_func(self, tok):
+        self.consume("ADD_FUNC")
+        name = self.consume_name_or_str()
+        self.known_functions.add(name)
+        return ("ADD_FUNC", name, tok.line)
 
-        if tok.kind == "ADD_OBJ":
-            self.consume("ADD_OBJ")
-            obj_name = self.consume_name_or_str()
-            self.known_variables.add(obj_name)
-            fields = {}
+    def _parse_add_obj(self, tok):
+        self.consume("ADD_OBJ")
+        obj_name = self.consume_name_or_str()
+        props = {}
+        while self.peek().kind not in ("TREN", "EOF"):
+            prop_name = self.consume("NAME").val
+            self.consume(":")
+            val = self.parse_atom()
+            props[prop_name] = val
+        self.consume("TREN")
+        self.known_variables.add(obj_name)
+        return ("ADD_OBJ", obj_name, props, tok.line)
+
+    def _parse_add_type(self, tok):
+        self.consume("ADD_TYPE")
+        type_name = self.consume_name_or_str()
+        props = {}
+        while self.peek().kind not in ("TREN", "EOF"):
+            prop_name = self.consume("NAME").val
+            self.consume(":")
+            val = self.parse_atom()
+            props[prop_name] = val
+        self.consume("TREN")
+        self.blueprints[type_name] = props
+        return ("ADD_TYPE", type_name, props, tok.line)
+
+    def _parse_fdel(self, tok):
+        self.consume("FDEL")
+        fn_name = self.consume("NAME").val
+        arg_name = self.consume("NAME").val
+        self.consume("TREN")
+        return ("FDEL_DEF", fn_name, arg_name, tok.line)
+
+    def _parse_trg(self, tok):
+        self.consume("TRG")
+        fn_name = self.consume("NAME").val
+        arg = self.parse_atom()
+        return ("TRG_ACTION", fn_name, arg, tok.line)
+
+    def _parse_cwin(self, tok):
+        self.consume(tok.kind)
+        title = self.parse_atom()
+        w = self.parse_coord_part()
+        self.consume(":")
+        h = self.parse_coord_part()
+        mode = "main"
+        if self.peek().kind == "NAME" and self.peek().val in ("main", "bg"):
+            mode = self.consume("NAME").val
+        return ("CWIN", title, w, h, mode, tok.line)
+
+    def _parse_sbgwin(self, tok):
+        self.consume("SBGWIN")
+        title = self.parse_atom()
+        color = self.parse_color()
+        return ("WIN_STYLE", title, color, tok.line)
+
+    def _parse_label(self, tok):
+        self.consume("LABEL")
+        text = self.parse_atom()
+        x = self.parse_coord_part()
+        self.consume(":")
+        y = self.parse_coord_part()
+        color = self.parse_color()
+        return ("LABEL", text, x, y, color, tok.line)
+
+    def _parse_regle(self, tok):
+        self.consume("REGLE")
+        x = self.parse_coord_part()
+        self.consume(":")
+        y = self.parse_coord_part()
+        w = self.parse_coord_part()
+        self.consume(":")
+        h = self.parse_coord_part()
+        color = self.parse_color()
+        return ("REGLE", x, y, w, h, color, tok.line)
+
+    def _parse_circ(self, tok):
+        self.consume("CIRC")
+        x = self.parse_coord_part()
+        self.consume(":")
+        y = self.parse_coord_part()
+        r = self.parse_coord_part()
+        color = self.parse_color()
+        return ("CIRC", x, y, r, color, tok.line)
+
+    def _parse_line(self, tok):
+        self.consume("LINE")
+        x1 = self.parse_coord_part()
+        self.consume(":")
+        y1 = self.parse_coord_part()
+        x2 = self.parse_coord_part()
+        self.consume(":")
+        y2 = self.parse_coord_part()
+        color = self.parse_color()
+        return ("LINE", x1, y1, x2, y2, color, tok.line)
+
+    def _parse_cube3d(self, tok):
+        self.consume("CUBE3D")
+        cx = self.parse_coord_part()
+        self.consume(":")
+        cy = self.parse_coord_part()
+        self.consume(":")
+        cz = self.parse_coord_part()
+        size = self.parse_coord_part()
+        rx = self.parse_coord_part()
+        self.consume(":")
+        ry = self.parse_coord_part()
+        color = self.parse_color()
+        return ("CUBE3D", cx, cy, cz, size, rx, ry, color, tok.line)
+
+    def _parse_line3d(self, tok):
+        self.consume("LINE3D")
+        x1 = self.parse_coord_part()
+        self.consume(":")
+        y1 = self.parse_coord_part()
+        self.consume(":")
+        z1 = self.parse_coord_part()
+        x2 = self.parse_coord_part()
+        self.consume(":")
+        y2 = self.parse_coord_part()
+        self.consume(":")
+        z2 = self.parse_coord_part()
+        rx = self.parse_coord_part()
+        self.consume(":")
+        ry = self.parse_coord_part()
+        color = self.parse_color()
+        return ("LINE3D", x1, y1, z1, x2, y2, z2, rx, ry, color, tok.line)
+
+    def _parse_sphere3d(self, tok):
+        self.consume("SPHERE3D")
+        cx = self.parse_coord_part()
+        self.consume(":")
+        cy = self.parse_coord_part()
+        self.consume(":")
+        cz = self.parse_coord_part()
+        rad = self.parse_coord_part()
+        rx = self.parse_coord_part()
+        self.consume(":")
+        ry = self.parse_coord_part()
+        color = self.parse_color()
+        return ("SPHERE3D", cx, cy, cz, rad, rx, ry, color, tok.line)
+
+    def _parse_pyramid3d(self, tok):
+        self.consume("PYRAMID3D")
+        cx = self.parse_coord_part()
+        self.consume(":")
+        cy = self.parse_coord_part()
+        self.consume(":")
+        cz = self.parse_coord_part()
+        size = self.parse_coord_part()
+        rx = self.parse_coord_part()
+        self.consume(":")
+        ry = self.parse_coord_part()
+        color = self.parse_color()
+        return ("PYRAMID3D", cx, cy, cz, size, rx, ry, color, tok.line)
+
+    def _parse_btn(self, tok):
+        self.consume("BTN")
+        label_text = self.parse_atom()
+        x = self.parse_coord_part()
+        self.consume(":")
+        y = self.parse_coord_part()
+        self.consume("TRG")
+        fn_name = self.consume("NAME").val
+        return ("BUTTON", label_text, x, y, fn_name, tok.line)
+
+    def _parse_inp(self, tok):
+        self.consume("INP")
+        placeholder = self.parse_atom()
+        x = self.parse_coord_part()
+        self.consume(":")
+        y = self.parse_coord_part()
+        self.consume("TIT")
+        var_name = self.consume("NAME").val
+        return ("INPUT", placeholder, x, y, var_name, tok.line)
+
+    def _parse_gloop(self, tok):
+        self.consume("GLOOP")
+        body = []
+        while self.peek().kind not in ("TREN", "EOF"):
+            body.append(self.parse_statement())
+        self.consume("TREN")
+        return ("GLOOP", body, tok.line)
+
+    def _parse_fps(self, tok):
+        self.consume("FPS")
+        mode_tok = self.peek()
+        if mode_tok.kind == "CALM":
+            self.consume("CALM")
+            return ("FPS_SET", "calm", 60, tok.line)
+        elif mode_tok.kind == "LOCK":
+            self.consume("LOCK")
+            rate = self.consume("NUM").val
+            return ("FPS_SET", "lock", rate, tok.line)
+        elif mode_tok.kind == "UNLOCK":
+            self.consume("UNLOCK")
+            return ("FPS_SET", "unlock", 0, tok.line)
+        raise TrappyError("FPS expects 'calm', 'lock <num>', or 'unlock'", tok.line)
+
+    def _parse_play(self, tok):
+        self.consume("PLAY")
+        sound_name = self.consume("STR").val
+        return ("PLAY_AUDIO", sound_name, tok.line)
+
+    def _parse_beep(self, tok):
+        self.consume("BEEP")
+        freq = self.parse_atom()
+        self.consume(":")
+        duration = self.parse_atom()
+        return ("BEEP_AUDIO", freq, duration, tok.line)
+
+    def _parse_synth(self, tok):
+        self.consume("SYNTH")
+        wave_type = self.parse_atom()
+        self.consume(":")
+        freq = self.parse_atom()
+        self.consume(":")
+        duration = self.parse_atom()
+        return ("SYNTH_AUDIO", wave_type, freq, duration, tok.line)
+
+    def _parse_write(self, tok):
+        self.consume("WRITE")
+        content = self.parse_expr()
+        self.consume("INTO")
+        filename = self.consume("STR").val
+        return ("WRITE_FILE", content, filename, tok.line)
+
+    def _parse_http_get(self, tok):
+        self.consume("HTTP_GET")
+        url_expr = self.parse_expr()
+        self.consume("TIT")
+        var_name = self.consume("NAME").val
+        return ("HTTP_GET", url_expr, var_name, tok.line)
+
+    def _parse_http_post(self, tok):
+        self.consume("HTTP_POST")
+        url_expr = self.parse_expr()
+        self.consume(":")
+        data_expr = self.parse_expr()
+        self.consume("TIT")
+        var_name = self.consume("NAME").val
+        return ("HTTP_POST", url_expr, data_expr, var_name, tok.line)
+
+    def _parse_download(self, tok):
+        self.consume("DOWNLOAD")
+        url_expr = self.parse_expr()
+        self.consume("INTO")
+        file_path = self.consume("STR").val
+        return ("DOWNLOAD_FILE", url_expr, file_path, tok.line)
+
+    def _parse_cli_connect(self, tok):
+        self.consume("CLI_CONNECT")
+        host_expr = self.parse_atom()
+        self.consume(":")
+        port_expr = self.parse_expr()
+        self.consume("TIT")
+        var_name = self.consume("NAME").val
+        return ("CLI_CONNECT", host_expr, port_expr, var_name, tok.line)
+
+    def _parse_cli_send(self, tok):
+        self.consume("CLI_SEND")
+        client_name = self.consume("NAME").val
+        self.consume(":")
+        data_expr = self.parse_expr()
+        return ("CLI_SEND", client_name, data_expr, tok.line)
+
+    def _parse_cli_recv(self, tok):
+        self.consume("CLI_RECV")
+        client_name = self.consume("NAME").val
+        self.consume("TIT")
+        var_name = self.consume("NAME").val
+        return ("CLI_RECV", client_name, var_name, tok.line)
+
+    def _parse_cli_close(self, tok):
+        self.consume("CLI_CLOSE")
+        client_name = self.consume("NAME").val
+        return ("CLI_CLOSE", client_name, tok.line)
+
+    def _parse_srv_listen(self, tok):
+        self.consume("SRV_LISTEN")
+        port_expr = self.parse_expr()
+        self.consume("TIT")
+        var_name = self.consume("NAME").val
+        return ("SRV_LISTEN", port_expr, var_name, tok.line)
+
+    def _parse_srv_accept(self, tok):
+        self.consume("SRV_ACCEPT")
+        server_name = self.consume("NAME").val
+        self.consume("TIT")
+        var_name = self.consume("NAME").val
+        return ("SRV_ACCEPT", server_name, var_name, tok.line)
+
+    def _parse_mem_alloc(self, tok):
+        self.consume("MEM_ALLOC")
+        size_expr = self.parse_expr()
+        self.consume("TIT")
+        var_name = self.consume("NAME").val
+        return ("MEM_ALLOC", size_expr, var_name, tok.line)
+
+    def _parse_mem_write(self, tok):
+        self.consume("MEM_WRITE")
+        buf_name = self.consume("NAME").val
+        self.consume(":")
+        offset_expr = self.parse_expr()
+        self.consume(":")
+        byte_expr = self.parse_expr()
+        return ("MEM_WRITE", buf_name, offset_expr, byte_expr, tok.line)
+
+    def _parse_mem_read(self, tok):
+        self.consume("MEM_READ")
+        buf_name = self.consume("NAME").val
+        self.consume(":")
+        offset_expr = self.parse_expr()
+        self.consume("TIT")
+        var_name = self.consume("NAME").val
+        return ("MEM_READ", buf_name, offset_expr, var_name, tok.line)
+
+    def _parse_sys_exec(self, tok):
+        self.consume("SYS_EXEC")
+        cmd_expr = self.parse_expr()
+        self.consume("TIT")
+        var_name = self.consume("NAME").val
+        return ("SYS_EXEC", cmd_expr, var_name, tok.line)
+
+    def _parse_sys_env(self, tok):
+        self.consume("SYS_ENV")
+        key_expr = self.parse_expr()
+        self.consume("TIT")
+        var_name = self.consume("NAME").val
+        return ("SYS_ENV", key_expr, var_name, tok.line)
+
+    def _parse_discord_webhook(self, tok):
+        self.consume("DISCORD_WEBHOOK")
+        url_expr = self.parse_expr()
+        self.consume(":")
+        msg_expr = self.parse_expr()
+        self.consume("TIT")
+        status_var = self.consume("NAME").val
+        return ("DISCORD_WEBHOOK", url_expr, msg_expr, status_var, tok.line)
+
+    def _parse_ws_connect(self, tok):
+        self.consume("WS_CONNECT")
+        url_expr = self.parse_expr()
+        self.consume("TIT")
+        var_name = self.consume("NAME").val
+        return ("WS_CONNECT", url_expr, var_name, tok.line)
+
+    def _parse_ws_send(self, tok):
+        self.consume("WS_SEND")
+        ws_name = self.consume("NAME").val
+        self.consume(":")
+        data_expr = self.parse_expr()
+        return ("WS_SEND", ws_name, data_expr, tok.line)
+
+    def _parse_ws_recv(self, tok):
+        self.consume("WS_RECV")
+        ws_name = self.consume("NAME").val
+        self.consume("TIT")
+        var_name = self.consume("NAME").val
+        return ("WS_RECV", ws_name, var_name, tok.line)
+
+    def _parse_ws_close(self, tok):
+        self.consume("WS_CLOSE")
+        ws_name = self.consume("NAME").val
+        return ("WS_CLOSE", ws_name, tok.line)
+
+    def _parse_json_parse(self, tok):
+        self.consume("JSON_PARSE")
+        json_str_expr = self.parse_expr()
+        self.consume("TIT")
+        dest_var = self.consume("NAME").val
+        return ("JSON_PARSE", json_str_expr, dest_var, tok.line)
+
+    def _parse_json_dump(self, tok):
+        self.consume("JSON_DUMP")
+        obj_expr = self.parse_expr()
+        self.consume("TIT")
+        dest_var = self.consume("NAME").val
+        return ("JSON_DUMP", obj_expr, dest_var, tok.line)
+
+    def _parse_dict(self, tok):
+        self.consume("DICT")
+        self.consume("TIT")
+        dict_name = self.consume("NAME").val
+        return ("DICT_NEW", dict_name, tok.line)
+
+    def _parse_dset(self, tok):
+        self.consume("DSET")
+        dict_name = self.consume("NAME").val
+        self.consume(":")
+        key_expr = self.parse_expr()
+        self.consume(":")
+        val_expr = self.parse_expr()
+        return ("DSET", dict_name, key_expr, val_expr, tok.line)
+
+    def _parse_dget(self, tok):
+        self.consume("DGET")
+        dict_name = self.consume("NAME").val
+        self.consume(":")
+        key_expr = self.parse_expr()
+        self.consume("TIT")
+        dest_var = self.consume("NAME").val
+        return ("DGET", dict_name, key_expr, dest_var, tok.line)
+
+    def _parse_dkeys(self, tok):
+        self.consume("DKEYS")
+        dict_name = self.consume("NAME").val
+        self.consume("TIT")
+        dest_var = self.consume("NAME").val
+        return ("DKEYS", dict_name, dest_var, tok.line)
+
+    def _parse_lget(self, tok):
+        self.consume("LGET")
+        list_name = self.consume("NAME").val
+        self.consume(":")
+        idx_expr = self.parse_expr()
+        self.consume("TIT")
+        dest_var = self.consume("NAME").val
+        return ("LGET", list_name, idx_expr, dest_var, tok.line)
+
+    def _parse_lset(self, tok):
+        self.consume("LSET")
+        list_name = self.consume("NAME").val
+        self.consume(":")
+        idx_expr = self.parse_expr()
+        self.consume(":")
+        val_expr = self.parse_expr()
+        return ("LSET", list_name, idx_expr, val_expr, tok.line)
+
+    def _parse_llen(self, tok):
+        self.consume("LLEN")
+        list_name = self.consume("NAME").val
+        self.consume("TIT")
+        dest_var = self.consume("NAME").val
+        return ("LLEN", list_name, dest_var, tok.line)
+
+    def _parse_lpush(self, tok):
+        self.consume("LPUSH")
+        list_name = self.consume("NAME").val
+        self.consume(":")
+        val_expr = self.parse_expr()
+        return ("LPUSH", list_name, val_expr, tok.line)
+
+    def _parse_lpop(self, tok):
+        self.consume("LPOP")
+        list_name = self.consume("NAME").val
+        self.consume("TIT")
+        dest_var = self.consume("NAME").val
+        return ("LPOP", list_name, dest_var, tok.line)
+
+    def _parse_file_write(self, tok):
+        self.consume("FILE_WRITE")
+        file_expr = self.parse_expr()
+        self.consume(":")
+        content_expr = self.parse_expr()
+        return ("FILE_WRITE", file_expr, content_expr, tok.line)
+
+    def _parse_file_read(self, tok):
+        self.consume("FILE_READ")
+        file_expr = self.parse_expr()
+        self.consume("TIT")
+        dest_var = self.consume("NAME").val
+        return ("FILE_READ", file_expr, dest_var, tok.line)
+
+    def _parse_file_append(self, tok):
+        self.consume("FILE_APPEND")
+        file_expr = self.parse_expr()
+        self.consume(":")
+        content_expr = self.parse_expr()
+        return ("FILE_APPEND", file_expr, content_expr, tok.line)
+
+    def _parse_file_exists(self, tok):
+        self.consume("FILE_EXISTS")
+        file_expr = self.parse_expr()
+        self.consume("TIT")
+        dest_var = self.consume("NAME").val
+        return ("FILE_EXISTS", file_expr, dest_var, tok.line)
+
+    def _parse_file_delete(self, tok):
+        self.consume("FILE_DELETE")
+        file_expr = self.parse_expr()
+        return ("FILE_DELETE", file_expr, tok.line)
+
+    def _parse_dir_list(self, tok):
+        self.consume("DIR_LIST")
+        path_expr = self.parse_expr()
+        self.consume("TIT")
+        dest_var = self.consume("NAME").val
+        return ("DIR_LIST", path_expr, dest_var, tok.line)
+
+    def _parse_box_hit(self, tok):
+        self.consume("BOX_HIT")
+        x1 = self.parse_coord_part()
+        self.consume(":")
+        y1 = self.parse_coord_part()
+        self.consume(":")
+        w1 = self.parse_coord_part()
+        self.consume(":")
+        h1 = self.parse_coord_part()
+        x2 = self.parse_coord_part()
+        self.consume(":")
+        y2 = self.parse_coord_part()
+        self.consume(":")
+        w2 = self.parse_coord_part()
+        self.consume(":")
+        h2 = self.parse_coord_part()
+        self.consume("TIT")
+        dest_var = self.consume("NAME").val
+        return ("BOX_HIT", x1, y1, w1, h1, x2, y2, w2, h2, dest_var, tok.line)
+
+    def _parse_vec_add(self, tok):
+        self.consume("VEC_ADD")
+        x1 = self.parse_coord_part()
+        self.consume(":")
+        y1 = self.parse_coord_part()
+        x2 = self.parse_coord_part()
+        self.consume(":")
+        y2 = self.parse_coord_part()
+        self.consume("TIT")
+        var_name = self.consume("NAME").val
+        return ("VEC_ADD", x1, y1, x2, y2, var_name, tok.line)
+
+    def _parse_vec_mag(self, tok):
+        self.consume("VEC_MAG")
+        x = self.parse_coord_part()
+        self.consume(":")
+        y = self.parse_coord_part()
+        self.consume("TIT")
+        dest_var = self.consume("NAME").val
+        return ("VEC_MAG", x, y, dest_var, tok.line)
+
+    def _parse_each(self, tok):
+        self.consume("EACH")
+        item_var = self.consume("NAME").val
+        self.consume("IN")
+        list_var = self.consume("NAME").val
+        body = []
+        while self.peek().kind not in ("TREN", "EOF"):
+            body.append(self.parse_statement())
+        self.consume("TREN")
+        return ("EACH_LOOP", item_var, list_var, body, tok.line)
+
+    def _parse_ifr(self, tok):
+        self.consume("IFR")
+
+        if self.peek().kind in ("KEY", "FLKEY"):
+            is_flkey = (self.peek().kind == "FLKEY")
+            self.consume(self.peek().kind)
+            key_name = self.consume("STR").val
+            if self.peek().kind in ("TRG", "TRGED"):
+                self.consume(self.peek().kind)
+
+            if self.peek().kind == "THEN":
+                self.consume("THEN")
+                action_stmt = self.parse_statement()
+                return ("KEY_CHECK", key_name, is_flkey, [action_stmt], tok.line)
+            else:
+                body = []
+                while self.peek().kind not in ("TREN", "EOF"):
+                    body.append(self.parse_statement())
+                self.consume("TREN")
+                return ("KEY_CHECK", key_name, is_flkey, body, tok.line)
+
+        left = self.parse_atom()
+        cmp_tokens = ("GRT", "LSS", "SM", "EQ", "==", "!=", ">", "<", ">=", "<=")
+
+        if self.peek().kind in cmp_tokens:
+            op_tok = self.consume(self.peek().kind)
+            op = op_tok.val.lower() if isinstance(op_tok.val, str) else op_tok.val
+            right = self.parse_atom()
+        else:
+            right = self.parse_atom()
+            if self.peek().kind not in cmp_tokens:
+                raise TrappyError("Condition missing comparison ('grt', 'lss', 'sm', 'eq', '==', '!=', '>', '<')", self.peek().line)
+            op_tok = self.consume(self.peek().kind)
+            op = op_tok.val.lower() if isinstance(op_tok.val, str) else op_tok.val
+
+        condition = ("COND", op, left, right)
+
+        if self.peek().kind == "THEN":
+            self.consume("THEN")
+
+        then_body = []
+        else_body = []
+        has_else = False
+
+        while self.peek().kind not in ("ELSE", "TREN", "EOF"):
+            if self.peek().kind == "THEN":
+                self.consume("THEN")
+                has_else = True
+                while self.peek().kind not in ("TREN", "EOF"):
+                    else_body.append(self.parse_statement())
+                break
+            then_body.append(self.parse_statement())
+
+        if self.peek().kind == "ELSE":
+            self.consume("ELSE")
+            has_else = True
             while self.peek().kind not in ("TREN", "EOF"):
-                field_name = self.consume("NAME").val
-                self.consume(":")
-                field_val = self.parse_expr()
-                fields[field_name] = field_val
-            self.consume("TREN")
-            return ("ADD_OBJ", obj_name, fields, tok.line)
+                else_body.append(self.parse_statement())
 
-        if tok.kind == "ADD_TYPE":
-            self.consume("ADD_TYPE")
-            type_name = self.consume_name_or_str()
-            fields = {}
-            while self.peek().kind not in ("TREN", "EOF"):
-                field_name = self.consume("NAME").val
-                self.consume(":")
-                field_val = self.parse_expr()
-                fields[field_name] = field_val
-            self.consume("TREN")
-            self.blueprints[type_name] = fields
-            return ("ADD_TYPE", type_name, fields, tok.line)
+        self.consume("TREN")
+        return ("IF_STMT", condition, then_body, else_body if has_else else None, tok.line)
 
-        if tok.kind in ("FMH", "FTXT", "FLIST", "FREP", "FLOOP", "FGUI", "FUI", "FDRW", "FGFX", "FCAN", "FWEB", "FCLI", "FAPP", "F3D", "FOS"):
-            fn_type = self.consume(tok.kind).val
+    def _parse_rep(self, tok):
+        self.consume("REP")
+        if self.peek().kind == "INF":
+            self.consume("INF")
+            count = "inf"
+        else:
+            count = self.parse_atom()
+
+        body = []
+        while self.peek().kind not in ("TREN", "EOF"):
+            body.append(self.parse_statement())
+        self.consume("TREN")
+        return ("REP_LOOP", count, body, tok.line)
+
+    def _parse_loop(self, tok):
+        self.consume("LOOP")
+        body = []
+        while self.peek().kind not in ("TREN", "EOF"):
+            body.append(self.parse_statement())
+        self.consume("TREN")
+        return ("INFINITE_LOOP", body, tok.line)
+
+    def _parse_srep(self, tok):
+        self.consume("SREP")
+        return ("BREAK_REP", tok.line)
+
+    def _parse_sloop(self, tok):
+        self.consume("SLOOP")
+        return ("BREAK_LOOP", tok.line)
+
+    def _parse_txt(self, tok):
+        self.consume("TXT")
+        expr = self.parse_expr()
+        self.consume("TIT")
+        var_name = self.consume("NAME").val
+        return ("ASSIGN_TARGET", ("VAR_TARGET", var_name), expr, tok.line)
+
+    def _parse_lst(self, tok):
+        self.consume("LST")
+        items = [self.parse_atom()]
+        while self.peek().kind == "|":
+            self.consume("|")
+            items.append(self.parse_atom())
+        self.consume("EQ")
+        var_name = self.consume("NAME").val
+        return ("ASSIGN_LIST", var_name, items, tok.line)
+
+    def _parse_mh(self, tok):
+        self.consume("MH")
+        expr = self.parse_expr()
+        self.consume("EQ")
+        target = self.parse_target_lvalue()
+        return ("ASSIGN_TARGET", target, expr, tok.line)
+
+    def _parse_function_or_call(self, tok):
+        fn_prefixes = ("FMH", "FTXT", "F3D", "FOS", "FCLI", "FUI", "FLIST", "FREP", "FLOOP", "FGUI", "FDRW", "FGFX", "FCAN", "FWEB", "FAPP")
+        if tok.kind in fn_prefixes:
+            self.consume(tok.kind)
             fn_name = self.consume("NAME").val
             self.known_functions.add(fn_name)
 
             params = []
-            if self.peek().kind in ("NAME", "STR"):
-                p_tok = self.peek()
-                self.consume(p_tok.kind)
-                params.append(p_tok.val)
+            if self.peek().kind == "NAME":
+                first_param = self.consume("NAME").val
+                params.append(first_param)
                 while self.peek().kind == ":":
                     self.consume(":")
-                    p_tok = self.peek()
-                    self.consume(p_tok.kind)
-                    params.append(p_tok.val)
+                    p_name = self.consume("NAME").val
+                    params.append(p_name)
 
             body = []
             while self.peek().kind not in ("TREN", "EOF"):
                 body.append(self.parse_statement())
             self.consume("TREN")
-            return ("FN_DEF", fn_type, fn_name, params, body, tok.line)
+            return ("FN_DEF", fn_name, params, body, tok.line)
 
-        if tok.kind == "FDEL":
-            self.consume("FDEL")
-            fn_name = self.consume("NAME").val
-            self.known_functions.add(fn_name)
-            target_param = self.consume("NAME").val
-            body = []
-            while self.peek().kind not in ("TREN", "EOF"):
-                body.append(self.parse_statement())
-            self.consume("TREN")
-            return ("FDEL_DEF", fn_name, target_param, body, tok.line)
+        if tok.kind == "ANSW":
+            self.consume("ANSW")
+            expr = self.parse_expr()
+            return ("RETURN", expr, tok.line)
 
-        if tok.kind == "TRG":
-            self.consume("TRG")
-            fn_name = self.consume("NAME").val
-            target = None
-            if self.peek().kind == "NAME":
-                target = self.consume("NAME").val
-            return ("TRG_ACTION", fn_name, target, tok.line)
-
-        if tok.kind == "CWIN":
-            self.consume("CWIN")
-            title = self.consume("STR").val
-            w = self.consume("NUM").val
-            self.consume(":")
-            h = self.consume("NUM").val
-            mode = "main"
-            if self.peek().kind == "NAME" and self.peek().val in ("main", "bg"):
-                mode = self.consume("NAME").val
-            return ("CWIN", title, w, h, mode, tok.line)
-
-        if tok.kind in ("SWIN", "SBGWIN"):
-            cmd = self.consume(tok.kind).val
-            win_name = self.consume("STR").val if self.peek().kind == "STR" else self.consume("NAME").val
-            color = self.consume("NAME").val
-            return ("WIN_STYLE", cmd, win_name, color, tok.line)
-
-        if tok.kind == "LABEL":
-            self.consume("LABEL")
-            text_expr = self.parse_expr()
-            x = self.parse_coord_part()
-            self.consume(":")
-            y = self.parse_coord_part()
-            color = self.consume("NAME").val if self.peek().kind == "NAME" else "white"
-            return ("LABEL", text_expr, x, y, color, tok.line)
-
-        if tok.kind == "REGLE":
-            self.consume("REGLE")
-            x = self.parse_coord_part()
-            self.consume(":")
-            y = self.parse_coord_part()
-            w = self.parse_coord_part()
-            self.consume(":")
-            h = self.parse_coord_part()
-            color = self.consume("NAME").val if self.peek().kind == "NAME" else "red"
-            return ("REGLE", x, y, w, h, color, tok.line)
-
-        if tok.kind == "CIRC":
-            self.consume("CIRC")
-            x = self.parse_coord_part()
-            self.consume(":")
-            y = self.parse_coord_part()
-            r = self.parse_coord_part()
-            color = self.consume("NAME").val if self.peek().kind == "NAME" else "blue"
-            return ("CIRC", x, y, r, color, tok.line)
-
-        if tok.kind == "LINE":
-            self.consume("LINE")
-            x1 = self.parse_coord_part()
-            self.consume(":")
-            y1 = self.parse_coord_part()
-            x2 = self.parse_coord_part()
-            self.consume(":")
-            y2 = self.parse_coord_part()
-            color = self.consume("NAME").val if self.peek().kind == "NAME" else "green"
-            return ("LINE", x1, y1, x2, y2, color, tok.line)
-
-        if tok.kind == "CUBE3D":
-            self.consume("CUBE3D")
-            x = self.parse_coord_part()
-            self.consume(":")
-            y = self.parse_coord_part()
-            self.consume(":")
-            z = self.parse_coord_part()
-            size = self.parse_coord_part()
-            rx = self.parse_coord_part()
-            self.consume(":")
-            ry = self.parse_coord_part()
-            color = self.consume("NAME").val if self.peek().kind == "NAME" else "cyan"
-            return ("CUBE3D", x, y, z, size, rx, ry, color, tok.line)
-
-        if tok.kind == "LINE3D":
-            self.consume("LINE3D")
-            x1 = self.parse_coord_part()
-            self.consume(":")
-            y1 = self.parse_coord_part()
-            self.consume(":")
-            z1 = self.parse_coord_part()
-            x2 = self.parse_coord_part()
-            self.consume(":")
-            y2 = self.parse_coord_part()
-            self.consume(":")
-            z2 = self.parse_coord_part()
-            rx = self.parse_coord_part()
-            self.consume(":")
-            ry = self.parse_coord_part()
-            color = self.consume("NAME").val if self.peek().kind == "NAME" else "green"
-            return ("LINE3D", x1, y1, z1, x2, y2, z2, rx, ry, color, tok.line)
-
-        if tok.kind == "SPHERE3D":
-            self.consume("SPHERE3D")
-            x = self.parse_coord_part()
-            self.consume(":")
-            y = self.parse_coord_part()
-            self.consume(":")
-            z = self.parse_coord_part()
-            radius = self.parse_coord_part()
-            rx = self.parse_coord_part()
-            self.consume(":")
-            ry = self.parse_coord_part()
-            color = self.consume("NAME").val if self.peek().kind == "NAME" else "cyan"
-            return ("SPHERE3D", x, y, z, radius, rx, ry, color, tok.line)
-
-        if tok.kind == "PYRAMID3D":
-            self.consume("PYRAMID3D")
-            x = self.parse_coord_part()
-            self.consume(":")
-            y = self.parse_coord_part()
-            self.consume(":")
-            z = self.parse_coord_part()
-            size = self.parse_coord_part()
-            rx = self.parse_coord_part()
-            self.consume(":")
-            ry = self.parse_coord_part()
-            color = self.consume("NAME").val if self.peek().kind == "NAME" else "yellow"
-            return ("PYRAMID3D", x, y, z, size, rx, ry, color, tok.line)
-
-        if tok.kind == "BTN":
-            self.consume("BTN")
-            btn_text = self.consume("STR").val
-            x = self.parse_coord_part()
-            self.consume(":")
-            y = self.parse_coord_part()
-            self.consume("TRG")
-            action = self.consume("NAME").val
-            return ("BUTTON", btn_text, x, y, action, tok.line)
-
-        if tok.kind == "INP":
-            self.consume("INP")
-            placeholder = self.consume("STR").val
-            x = self.parse_coord_part()
-            self.consume(":")
-            y = self.parse_coord_part()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("INPUT", placeholder, x, y, var_name, tok.line)
-
-        if tok.kind == "GLOOP":
-            self.consume("GLOOP")
-            body = []
-            while self.peek().kind not in ("TREN", "EOF"):
-                body.append(self.parse_statement())
-            self.consume("TREN")
-            return ("GLOOP", body, tok.line)
-
-        if tok.kind == "FPS":
-            self.consume("FPS")
-            mode = self.peek().val.lower()
-            if mode in ("calm", "unlock"):
-                self.consume(self.peek().kind)
-                return ("FPS_SET", mode, None, tok.line)
-            elif mode == "lock":
-                self.consume(self.peek().kind)
-                target_fps = self.consume("NUM").val
-                return ("FPS_SET", "lock", target_fps, tok.line)
-            raise TrappyError("FPS expects 'calm', 'lock <num>', or 'unlock'", tok.line)
-
-        if tok.kind == "PLAY":
-            self.consume("PLAY")
-            snd_file = self.consume("STR").val
-            return ("PLAY_AUDIO", snd_file, tok.line)
-
-        if tok.kind == "BEEP":
-            self.consume("BEEP")
-            freq = self.parse_coord_part()
-            self.consume(":")
-            dur = self.parse_coord_part()
-            return ("BEEP_AUDIO", freq, dur, tok.line)
-
-        if tok.kind == "SYNTH":
-            self.consume("SYNTH")
-            wave_expr = self.parse_coord_part()
-            self.consume(":")
-            freq = self.parse_coord_part()
-            self.consume(":")
-            dur = self.parse_coord_part()
-            return ("SYNTH_AUDIO", wave_expr, freq, dur, tok.line)
-
-        if tok.kind == "WRITE":
-            self.consume("WRITE")
-            filename = self.consume("STR").val
-            val_expr = self.parse_expr()
-            dest_dir = None
-            if self.peek().kind == "INTO":
-                self.consume("INTO")
-                dest_dir = self.consume("NAME").val
-            return ("WRITE_FILE", filename, val_expr, dest_dir, tok.line)
-
-        if tok.kind == "HTTP_GET":
-            self.consume("HTTP_GET")
-            url_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("HTTP_GET", url_expr, var_name, tok.line)
-
-        if tok.kind == "HTTP_POST":
-            self.consume("HTTP_POST")
-            url_expr = self.parse_expr()
-            self.consume(":")
-            data_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("HTTP_POST", url_expr, data_expr, var_name, tok.line)
-
-        if tok.kind == "DOWNLOAD":
-            self.consume("DOWNLOAD")
-            url_expr = self.parse_expr()
-            self.consume("INTO")
-            dest_file = self.consume("STR").val
-            return ("DOWNLOAD_FILE", url_expr, dest_file, tok.line)
-
-        if tok.kind in ("PACK", "PACK_DATA"):
+        if tok.kind in ("OUT", "GAN"):
             self.consume(tok.kind)
-            data_expr = self.parse_expr()
+            expr = self.parse_expr()
+            return ("OUT", expr, tok.line)
+
+        if tok.kind == "PACK_DATA":
+            self.consume("PACK_DATA")
+            obj_name = self.consume("NAME").val
             self.consume("TIT")
             var_name = self.consume("NAME").val
-            return ("PACK_DATA", data_expr, var_name, tok.line)
+            return ("PACK_DATA", obj_name, var_name, tok.line)
 
-        if tok.kind in ("UNPACK", "UNPACK_DATA"):
-            self.consume(tok.kind)
-            data_expr = self.parse_expr()
+        if tok.kind == "UNPACK_DATA":
+            self.consume("UNPACK_DATA")
+            packet_expr = self.parse_expr()
             self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("UNPACK_DATA", data_expr, var_name, tok.line)
+            obj_name = self.consume("NAME").val
+            return ("UNPACK_DATA", packet_expr, obj_name, tok.line)
 
-        if tok.kind == "CLI_CONNECT":
-            self.consume("CLI_CONNECT")
-            host_expr = self.parse_expr()
-            self.consume(":")
-            port_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("CLI_CONNECT", host_expr, port_expr, var_name, tok.line)
+        if tok.kind == "SPAWN":
+            self.consume("SPAWN")
+            type_name = self.consume("NAME").val
+            self.consume("AS")
+            obj_name = self.consume("NAME").val
+            return ("ADD_OBJ", obj_name, type_name, tok.line)
 
-        if tok.kind == "CLI_SEND":
-            self.consume("CLI_SEND")
-            client_name = self.consume("NAME").val
-            self.consume(":")
-            data_expr = self.parse_expr()
-            return ("CLI_SEND", client_name, data_expr, tok.line)
+        if tok.kind == "NAME":
+            name = self.consume("NAME").val
+            if name in self.known_functions:
+                args = []
+                if self.peek().kind in ("NUM", "STR", "NAME", "("):
+                    args.append(self.parse_atom())
+                    while self.peek().kind == ":":
+                        self.consume(":")
+                        args.append(self.parse_atom())
+                return ("CALL", name, args, tok.line)
 
-        if tok.kind == "CLI_RECV":
-            self.consume("CLI_RECV")
-            client_name = self.consume("NAME").val
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("CLI_RECV", client_name, var_name, tok.line)
+            if self.peek().kind == ".":
+                self.consume(".")
+                prop = self.consume("NAME").val
+                self.consume("EQ")
+                expr = self.parse_expr()
+                return ("ASSIGN_TARGET", ("DOT_TARGET", name, prop), expr, tok.line)
 
-        if tok.kind == "CLI_CLOSE":
-            self.consume("CLI_CLOSE")
-            client_name = self.consume("NAME").val
-            return ("CLI_CLOSE", client_name, tok.line)
-
-        if tok.kind == "SRV_LISTEN":
-            self.consume("SRV_LISTEN")
-            port_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("SRV_LISTEN", port_expr, var_name, tok.line)
-
-        if tok.kind == "SRV_ACCEPT":
-            self.consume("SRV_ACCEPT")
-            server_name = self.consume("NAME").val
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("SRV_ACCEPT", server_name, var_name, tok.line)
-
-        if tok.kind == "MEM_ALLOC":
-            self.consume("MEM_ALLOC")
-            size_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("MEM_ALLOC", size_expr, var_name, tok.line)
-
-        if tok.kind == "MEM_WRITE":
-            self.consume("MEM_WRITE")
-            ptr_name = self.consume("NAME").val
-            self.consume(":")
-            offset_expr = self.parse_expr()
-            self.consume(":")
-            byte_expr = self.parse_expr()
-            return ("MEM_WRITE", ptr_name, offset_expr, byte_expr, tok.line)
-
-        if tok.kind == "MEM_READ":
-            self.consume("MEM_READ")
-            ptr_name = self.consume("NAME").val
-            self.consume(":")
-            offset_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("MEM_READ", ptr_name, offset_expr, var_name, tok.line)
-
-        if tok.kind == "SYS_EXEC":
-            self.consume("SYS_EXEC")
-            cmd_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("SYS_EXEC", cmd_expr, var_name, tok.line)
-
-        if tok.kind == "SYS_ENV":
-            self.consume("SYS_ENV")
-            name_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("SYS_ENV", name_expr, var_name, tok.line)
-
-        if tok.kind == "DISCORD_WEBHOOK":
-            self.consume("DISCORD_WEBHOOK")
-            url_expr = self.parse_expr()
-            self.consume(":")
-            msg_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("DISCORD_WEBHOOK", url_expr, msg_expr, var_name, tok.line)
-
-        if tok.kind == "WS_CONNECT":
-            self.consume("WS_CONNECT")
-            url_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("WS_CONNECT", url_expr, var_name, tok.line)
-
-        if tok.kind == "WS_SEND":
-            self.consume("WS_SEND")
-            sock_name = self.consume("NAME").val
-            self.consume(":")
-            msg_expr = self.parse_expr()
-            return ("WS_SEND", sock_name, msg_expr, tok.line)
-
-        if tok.kind == "WS_RECV":
-            self.consume("WS_RECV")
-            sock_name = self.consume("NAME").val
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("WS_RECV", sock_name, var_name, tok.line)
-
-        if tok.kind == "WS_CLOSE":
-            self.consume("WS_CLOSE")
-            sock_name = self.consume("NAME").val
-            return ("WS_CLOSE", sock_name, tok.line)
-
-        if tok.kind == "JSON_PARSE":
-            self.consume("JSON_PARSE")
-            str_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("JSON_PARSE", str_expr, var_name, tok.line)
-
-        if tok.kind == "JSON_DUMP":
-            self.consume("JSON_DUMP")
-            obj_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("JSON_DUMP", obj_expr, var_name, tok.line)
-
-        if tok.kind == "DICT":
-            self.consume("DICT")
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("DICT_NEW", var_name, tok.line)
-
-        if tok.kind == "DSET":
-            self.consume("DSET")
-            dict_name = self.consume("NAME").val
-            self.consume(":")
-            key_expr = self.parse_expr()
-            self.consume(":")
-            val_expr = self.parse_expr()
-            return ("DSET", dict_name, key_expr, val_expr, tok.line)
-
-        if tok.kind == "DGET":
-            self.consume("DGET")
-            dict_name = self.consume("NAME").val
-            self.consume(":")
-            key_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("DGET", dict_name, key_expr, var_name, tok.line)
-
-        if tok.kind == "DKEYS":
-            self.consume("DKEYS")
-            dict_name = self.consume("NAME").val
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("DKEYS", dict_name, var_name, tok.line)
-
-        if tok.kind == "LGET":
-            self.consume("LGET")
-            list_name = self.consume("NAME").val
-            self.consume(":")
-            idx_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("LGET", list_name, idx_expr, var_name, tok.line)
-
-        if tok.kind == "LSET":
-            self.consume("LSET")
-            list_name = self.consume("NAME").val
-            self.consume(":")
-            idx_expr = self.parse_expr()
-            self.consume(":")
-            val_expr = self.parse_expr()
-            return ("LSET", list_name, idx_expr, val_expr, tok.line)
-
-        if tok.kind == "LLEN":
-            self.consume("LLEN")
-            list_name = self.consume("NAME").val
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("LLEN", list_name, var_name, tok.line)
-
-        if tok.kind == "LPUSH":
-            self.consume("LPUSH")
-            list_name = self.consume("NAME").val
-            self.consume(":")
-            val_expr = self.parse_expr()
-            return ("LPUSH", list_name, val_expr, tok.line)
-
-        if tok.kind == "LPOP":
-            self.consume("LPOP")
-            list_name = self.consume("NAME").val
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("LPOP", list_name, var_name, tok.line)
-
-        if tok.kind == "FILE_WRITE":
-            self.consume("FILE_WRITE")
-            path_expr = self.parse_expr()
-            self.consume(":")
-            data_expr = self.parse_expr()
-            return ("FILE_WRITE", path_expr, data_expr, tok.line)
-
-        if tok.kind == "FILE_READ":
-            self.consume("FILE_READ")
-            path_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("FILE_READ", path_expr, var_name, tok.line)
-
-        if tok.kind == "FILE_APPEND":
-            self.consume("FILE_APPEND")
-            path_expr = self.parse_expr()
-            self.consume(":")
-            data_expr = self.parse_expr()
-            return ("FILE_APPEND", path_expr, data_expr, tok.line)
-
-        if tok.kind == "FILE_EXISTS":
-            self.consume("FILE_EXISTS")
-            path_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("FILE_EXISTS", path_expr, var_name, tok.line)
-
-        if tok.kind == "FILE_DELETE":
-            self.consume("FILE_DELETE")
-            path_expr = self.parse_expr()
-            return ("FILE_DELETE", path_expr, tok.line)
-
-        if tok.kind == "DIR_LIST":
-            self.consume("DIR_LIST")
-            path_expr = self.parse_expr()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("DIR_LIST", path_expr, var_name, tok.line)
-
-        if tok.kind == "BOX_HIT":
-            self.consume("BOX_HIT")
-            x1 = self.parse_coord_part()
-            self.consume(":")
-            y1 = self.parse_coord_part()
-            self.consume(":")
-            w1 = self.parse_coord_part()
-            self.consume(":")
-            h1 = self.parse_coord_part()
-            x2 = self.parse_coord_part()
-            self.consume(":")
-            y2 = self.parse_coord_part()
-            self.consume(":")
-            w2 = self.parse_coord_part()
-            self.consume(":")
-            h2 = self.parse_coord_part()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("BOX_HIT", x1, y1, w1, h1, x2, y2, w2, h2, var_name, tok.line)
-
-        if tok.kind == "VEC_ADD":
-            self.consume("VEC_ADD")
-            x1 = self.parse_coord_part()
-            self.consume(":")
-            y1 = self.parse_coord_part()
-            x2 = self.parse_coord_part()
-            self.consume(":")
-            y2 = self.parse_coord_part()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("VEC_ADD", x1, y1, x2, y2, var_name, tok.line)
-
-        if tok.kind == "VEC_MAG":
-            self.consume("VEC_MAG")
-            x = self.parse_coord_part()
-            self.consume(":")
-            y = self.parse_coord_part()
-            self.consume("TIT")
-            var_name = self.consume("NAME").val
-            return ("VEC_MAG", x, y, var_name, tok.line)
-
-        if tok.kind == "EACH":
-            self.consume("EACH")
-            item_var = self.consume("NAME").val
-            self.consume("IN")
-            list_var = self.consume("NAME").val
-            body = []
-            while self.peek().kind not in ("TREN", "EOF"):
-                body.append(self.parse_statement())
-            self.consume("TREN")
-            return ("EACH_LOOP", item_var, list_var, body, tok.line)
-
-        if tok.kind == "IFR":
-            self.consume("IFR")
-
-            if self.peek().kind in ("KEY", "FLKEY"):
-                is_flkey = (self.peek().kind == "FLKEY")
-                self.consume(self.peek().kind)
-                key_name = self.consume("STR").val
-                if self.peek().kind in ("TRG", "TRGED"):
-                    self.consume(self.peek().kind)
-
-                if self.peek().kind == "THEN":
-                    self.consume("THEN")
-                    action_stmt = self.parse_statement()
-                    return ("KEY_CHECK", key_name, is_flkey, [action_stmt], tok.line)
-                else:
-                    body = []
-                    while self.peek().kind not in ("TREN", "EOF"):
-                        body.append(self.parse_statement())
-                    self.consume("TREN")
-                    return ("KEY_CHECK", key_name, is_flkey, body, tok.line)
-
-            left = self.parse_atom()
-
-            if self.peek().kind in ("GRT", "LSS", "SM"):
-                op = self.consume(self.peek().kind).val
-                right = self.parse_atom()
-            else:
-                right = self.parse_atom()
-                if self.peek().kind not in ("GRT", "LSS", "SM"):
-                    raise TrappyError("Condition missing comparison ('grt', 'lss', or 'sm')", self.peek().line)
-                op = self.consume(self.peek().kind).val
-
-            condition = ("COND", op, left, right)
-
-            then_body = []
-            else_body = []
-            has_else = False
-
-            while self.peek().kind not in ("THEN", "ELSE", "TREN", "EOF"):
-                then_body.append(self.parse_statement())
-
-            if self.peek().kind in ("THEN", "ELSE"):
-                self.consume(self.peek().kind)
-                has_else = True
-                while self.peek().kind not in ("TREN", "EOF"):
-                    else_body.append(self.parse_statement())
-
-            self.consume("TREN")
-            return ("IF_STMT", condition, then_body, else_body if has_else else None, tok.line)
-
-        if tok.kind == "REP":
-            self.consume("REP")
-            if self.peek().kind == "INF":
-                self.consume("INF")
-                count = "inf"
-            else:
-                count = self.parse_atom()
-
-            body = []
-            while self.peek().kind not in ("TREN", "EOF"):
-                body.append(self.parse_statement())
-            self.consume("TREN")
-            return ("REP_LOOP", count, body, tok.line)
-
-        if tok.kind == "LOOP":
-            self.consume("LOOP")
-            body = []
-            while self.peek().kind not in ("TREN", "EOF"):
-                body.append(self.parse_statement())
-            self.consume("TREN")
-            return ("INFINITE_LOOP", body, tok.line)
-
-        if tok.kind == "SREP":
-            self.consume("SREP")
-            return ("BREAK_REP", tok.line)
-
-        if tok.kind == "SLOOP":
-            self.consume("SLOOP")
-            return ("BREAK_LOOP", tok.line)
-
-        if tok.kind == "TXT":
-            self.consume("TXT")
             if self.peek().kind == "EQ":
                 self.consume("EQ")
-            val_expr = self.parse_expr()
-            self.consume("TIT")
-            target = self.parse_target_lvalue()
-            return ("ASSIGN_TARGET", target, val_expr, tok.line)
+                expr = self.parse_expr()
+                return ("ASSIGN_TARGET", ("VAR_TARGET", name), expr, tok.line)
 
-        if tok.kind == "LST":
-            self.consume("LST")
-            items = [self.parse_expr()]
-            while self.peek().kind == "|":
-                self.consume("|")
-                items.append(self.parse_expr())
-            self.consume("EQ")
-            target = self.parse_target_lvalue()
-            return ("ASSIGN_LIST", target, items, tok.line)
-
-        if tok.kind == "MH":
-            self.consume("MH")
-            expr = self.parse_expr()
-            self.consume("EQ")
-            target = self.parse_target_lvalue()
-            return ("ASSIGN_TARGET", target, expr, tok.line)
-
-        if tok.kind in ("ANSW", "RT"):
-            self.consume(tok.kind)
-            return ("RETURN", self.parse_expr(), tok.line)
-
-        if tok.kind in ("GAN", "OUT"):
-            self.consume(tok.kind)
-            return ("OUT", self.parse_expr(), tok.line)
+            if self.peek().kind in ("NUM", "STR", "NAME", "("):
+                args = [self.parse_atom()]
+                while self.peek().kind == ":":
+                    self.consume(":")
+                    args.append(self.parse_atom())
+                return ("CALL", name, args, tok.line)
 
         raise TrappyError(f"Unexpected command '{tok.val}'", tok.line)
 
     def consume_name_or_str(self):
         tok = self.peek()
-        if tok.kind in ("NAME", "STR"):
-            self.consume(tok.kind)
-            return tok.val
+        if tok.kind == "NAME":
+            return self.consume("NAME").val
+        elif tok.kind == "STR":
+            return self.consume("STR").val
         raise TrappyError(f"Expected name or string, got '{tok.val}'", tok.line)
+
+    def parse_color(self):
+        tok = self.peek()
+        if tok.kind == "NAME":
+            return self.consume("NAME").val
+        elif tok.kind == "STR":
+            return self.consume("STR").val
+        return "white"
 
     def parse_target_lvalue(self):
         name = self.consume("NAME").val
@@ -980,6 +1144,7 @@ class Parser:
             if sub_tok[0] == "NUM":
                 return ("NUM", -sub_tok[1])
             return ("BINOP", "-", ("NUM", 0), sub_tok)
+
         if tok.kind == "NAME":
             name = self.consume("NAME").val
             if self.peek().kind == ".":
@@ -987,6 +1152,7 @@ class Parser:
                 prop = self.consume("NAME").val
                 return ("DOT", name, prop, tok.line)
             return ("VAR", name, tok.line)
+
         raise TrappyError(f"Expected number or coordinate variable, got '{tok.val}'", tok.line)
 
     def parse_expr(self):
@@ -1081,61 +1247,22 @@ class Parser:
                     self.consume(":")
                     args.append(self.parse_atom())
                 return ("CALL", name, args, tok.line)
+
             return ("VAR", name, tok.line)
 
         raise TrappyError(f"Invalid item in expression '{tok.val}'", tok.line)
 
     def parse_atom(self):
         tok = self.peek()
-        if tok.kind in ("SQRT", "ABS", "SIN", "COS"):
-            op = self.consume(tok.kind).val
-            arg = self.parse_atom()
-            return ("MATH_UNARY", op, arg, tok.line)
-
-        if tok.kind == "POW":
-            self.consume("POW")
-            a = self.parse_atom()
-            self.consume(":")
-            b = self.parse_atom()
-            return ("MATH_BINARY", "pow", a, b, tok.line)
-
-        if tok.kind == "DIST":
-            self.consume("DIST")
-            x1 = self.parse_atom()
-            self.consume(":")
-            y1 = self.parse_atom()
-            self.consume(":")
-            x2 = self.parse_atom()
-            self.consume(":")
-            y2 = self.parse_atom()
-            return ("MATH_DIST", x1, y1, x2, y2, tok.line)
-
-        if tok.kind == "CLAMP":
-            self.consume("CLAMP")
-            val = self.parse_atom()
-            self.consume(":")
-            min_v = self.parse_atom()
-            self.consume(":")
-            max_v = self.parse_atom()
-            return ("MATH_CLAMP", val, min_v, max_v, tok.line)
-
-        if tok.kind == "RND":
-            self.consume("RND")
-            low = self.parse_atom()
-            self.consume(":")
-            high = self.parse_atom()
-            return ("RND", low, high, tok.line)
-
         if tok.kind == "NUM":
             self.consume("NUM")
             return ("NUM", tok.val)
-
         if tok.kind == "-":
             self.consume("-")
-            sub_tok = self.parse_atom()
-            if sub_tok[0] == "NUM":
-                return ("NUM", -sub_tok[1])
-            return ("BINOP", "-", ("NUM", 0), sub_tok)
+            sub = self.parse_atom()
+            if sub[0] == "NUM":
+                return ("NUM", -sub[1])
+            return ("BINOP", "-", ("NUM", 0), sub)
         if tok.kind == "STR":
             self.consume("STR")
             return ("STR", tok.val)
@@ -1195,14 +1322,6 @@ class Environment:
             return self.parent.delete(name)
         return False
 
-class ReturnSignal(Exception):
-    def __init__(self, value):
-        self.value = value
-
-class BreakSignal(Exception):
-    def __init__(self, loop_type):
-        self.loop_type = loop_type
-
 class TrappyGUI:
     def __init__(self, title, width, height, mode="main"):
         if tk is None:
@@ -1247,6 +1366,89 @@ class TrappyInterpreter:
         self.call_depth = 0
         self.MAX_CALL_DEPTH = 100
 
+        self._eval_dispatch = {
+            "PROGRAM": self._eval_program,
+            "OUT": self._eval_out,
+            "ASSIGN_TARGET": self._eval_assign_target,
+            "ASSIGN_LIST": self._eval_assign_list,
+            "FN_DEF": self._eval_fn_def,
+            "FDEL_DEF": self._eval_fdel_def,
+            "TRG_ACTION": self._eval_trg_action,
+            "CALL": self._eval_call,
+            "RETURN": self._eval_return,
+            "ADD_VAR": self._eval_add_var,
+            "ADD_FUNC": self._eval_add_func,
+            "ADD_OBJ": self._eval_add_obj,
+            "ADD_TYPE": self._eval_add_type,
+            "CWIN": self._eval_cwin,
+            "SWIN": self._eval_cwin,
+            "WIN_STYLE": self._eval_win_style,
+            "LABEL": self._eval_label,
+            "REGLE": self._eval_regle,
+            "CIRC": self._eval_circ,
+            "LINE": self._eval_line,
+            "CUBE3D": self._eval_cube3d,
+            "LINE3D": self._eval_line3d,
+            "SPHERE3D": self._eval_sphere3d,
+            "PYRAMID3D": self._eval_pyramid3d,
+            "BUTTON": self._eval_button,
+            "INPUT": self._eval_input,
+            "GLOOP": self._eval_gloop,
+            "FPS_SET": self._eval_fps_set,
+            "PLAY_AUDIO": self._eval_play_audio,
+            "BEEP_AUDIO": self._eval_beep_audio,
+            "SYNTH_AUDIO": self._eval_synth_audio,
+            "WRITE_FILE": self._eval_write_file,
+            "HTTP_GET": self._eval_http_get,
+            "HTTP_POST": self._eval_http_post,
+            "DOWNLOAD_FILE": self._eval_download_file,
+            "CLI_CONNECT": self._eval_cli_connect,
+            "CLI_SEND": self._eval_cli_send,
+            "CLI_RECV": self._eval_cli_recv,
+            "CLI_CLOSE": self._eval_cli_close,
+            "SRV_LISTEN": self._eval_srv_listen,
+            "SRV_ACCEPT": self._eval_srv_accept,
+            "MEM_ALLOC": self._eval_mem_alloc,
+            "MEM_WRITE": self._eval_mem_write,
+            "MEM_READ": self._eval_mem_read,
+            "SYS_EXEC": self._eval_sys_exec,
+            "SYS_ENV": self._eval_sys_env,
+            "DISCORD_WEBHOOK": self._eval_discord_webhook,
+            "WS_CONNECT": self._eval_ws_connect,
+            "WS_SEND": self._eval_ws_send,
+            "WS_RECV": self._eval_ws_recv,
+            "WS_CLOSE": self._eval_ws_close,
+            "JSON_PARSE": self._eval_json_parse,
+            "JSON_DUMP": self._eval_json_dump,
+            "DICT_NEW": self._eval_dict_new,
+            "DSET": self._eval_dset,
+            "DGET": self._eval_dget,
+            "DKEYS": self._eval_dkeys,
+            "LGET": self._eval_lget,
+            "LSET": self._eval_lset,
+            "LLEN": self._eval_llen,
+            "LPUSH": self._eval_lpush,
+            "LPOP": self._eval_lpop,
+            "FILE_WRITE": self._eval_file_write,
+            "FILE_READ": self._eval_file_read,
+            "FILE_APPEND": self._eval_file_append,
+            "FILE_EXISTS": self._eval_file_exists,
+            "FILE_DELETE": self._eval_file_delete,
+            "DIR_LIST": self._eval_dir_list,
+            "BOX_HIT": self._eval_box_hit,
+            "VEC_ADD": self._eval_vec_add,
+            "VEC_MAG": self._eval_vec_mag,
+            "EACH_LOOP": self._eval_each_loop,
+            "IF_STMT": self._eval_if_stmt,
+            "KEY_CHECK": self._eval_key_check,
+            "REP_LOOP": self._eval_rep_loop,
+            "INFINITE_LOOP": self._eval_infinite_loop,
+            "BREAK_REP": self._eval_break_rep,
+            "BREAK_LOOP": self._eval_break_loop,
+            "PACK_DATA": self._eval_pack_data,
+            "UNPACK_DATA": self._eval_unpack_data
+        }
+
     def run(self, ast):
         if ast[0] == "PROGRAM":
             for stmt in ast[1]:
@@ -1258,24 +1460,18 @@ class TrappyInterpreter:
                 self.gui.root.mainloop()
 
     def _schedule_game_frame(self):
-        if not self.gui or not self.gui.root:
+        if not (self.gui and self.gui.root and self.gui.canvas):
             return
 
-        start_time = time.time()
         self.gui.canvas.delete("all")
+        if self.game_loop_body:
+            for stmt in self.game_loop_body:
+                self.eval_stmt(stmt, self.global_env)
 
-        for stmt in self.game_loop_body:
-            self.eval_stmt(stmt, self.global_env)
-
-        elapsed = time.time() - start_time
-
-        if not getattr(self.gui, 'is_focused', True) and self.fps_mode == "calm":
-            delay = 66
-        elif self.fps_mode == "calm":
-            delay = max(1, int((0.016 - elapsed) * 1000))
-        elif self.fps_mode == "lock":
-            target_sec = 1.0 / max(1, self.target_fps)
-            delay = max(1, int((target_sec - elapsed) * 1000))
+        if self.fps_mode == "calm":
+            delay = 16 if self.gui.is_focused else 66
+        elif self.fps_mode == "lock" and self.target_fps > 0:
+            delay = int(1000 / self.target_fps)
         else:
             delay = 1
 
@@ -1283,949 +1479,1022 @@ class TrappyInterpreter:
 
     def eval_stmt(self, stmt, env):
         kind = stmt[0]
+        handler = self._eval_dispatch.get(kind)
+        if handler:
+            return handler(stmt, env)
+        return None
 
-        if kind == "ADD_VAR":
-            _, var_name, type_name, _ = stmt
-            env.declare(var_name)
-            if type_name and type_name in self.blueprints:
-                instance = {}
-                for k, v_expr in self.blueprints[type_name].items():
-                    instance[k] = self.eval_expr(v_expr, env)
-                env.set(var_name, instance)
+    def _eval_program(self, stmt, env):
+        for s in stmt[1]:
+            self.eval_stmt(s, env)
+
+    def _eval_out(self, stmt, env):
+        _, expr, _ = stmt
+        val = self.eval_expr(expr, env)
+        if isinstance(val, list):
+            out_str = " | ".join(str(x) for x in val)
+        else:
+            out_str = str(val)
+        print(f">>> {out_str}")
+
+    def _eval_assign_target(self, stmt, env):
+        _, target, expr, line = stmt
+        val = self.eval_expr(expr, env)
+        if target[0] == "VAR_TARGET":
+            env.set(target[1], val)
+        elif target[0] == "DOT_TARGET":
+            _, obj_name, prop_name = target
+            env.set_dot(obj_name, prop_name, val, line)
+
+    def _eval_assign_list(self, stmt, env):
+        _, var_name, items, _ = stmt
+        evaluated_items = [self.eval_expr(it, env) for it in items]
+        env.set(var_name, evaluated_items)
+
+    def _eval_fn_def(self, stmt, env):
+        _, fn_name, params, body, _ = stmt
+        self.functions[fn_name] = (params, body)
+
+    def _eval_fdel_def(self, stmt, env):
+        _, fn_name, arg_name, _ = stmt
+        self.del_functions[fn_name] = arg_name
+
+    def _eval_trg_action(self, stmt, env):
+        _, fn_name, arg_expr, line = stmt
+        if fn_name in self.del_functions:
+            if isinstance(arg_expr, tuple) and arg_expr[0] == "VAR":
+                target_var = arg_expr[1]
+            elif isinstance(arg_expr, str):
+                target_var = arg_expr
             else:
-                env.set(var_name, 0)
-
-        elif kind == "ADD_FUNC":
-            _, fn_name, _ = stmt
-            pass
-
-        elif kind == "ADD_OBJ":
-            _, obj_name, raw_fields, _ = stmt
-            env.declare(obj_name)
-            obj_dict = {}
-            for k, v_expr in raw_fields.items():
-                obj_dict[k] = self.eval_expr(v_expr, env)
-            env.set(obj_name, obj_dict)
-
-        elif kind == "ADD_TYPE":
-            _, type_name, fields, _ = stmt
-            self.blueprints[type_name] = fields
-
-        elif kind == "ASSIGN_TARGET":
-            _, target, expr, line = stmt
-            val = self.eval_expr(expr, env)
-            if target[0] == "VAR_TARGET":
-                env.set(target[1], val)
-            elif target[0] == "DOT_TARGET":
-                env.set_dot(target[1], target[2], val, line)
-
-        elif kind == "ASSIGN_LIST":
-            _, target, raw_items, line = stmt
-            val = [self.eval_expr(it, env) for it in raw_items]
-            if target[0] == "VAR_TARGET":
-                env.set(target[1], val)
-            elif target[0] == "DOT_TARGET":
-                env.set_dot(target[1], target[2], val, line)
-
-        elif kind == "EACH_LOOP":
-            _, item_var, list_var, body, line = stmt
-            collection = env.get(list_var, line)
-            if not isinstance(collection, list):
-                raise TrappyError(f"'{list_var}' is not a list to loop over!", line)
-            for element in collection:
-                env.set(item_var, element)
-                for s in body:
-                    self.eval_stmt(s, env)
-
-        elif kind == "OUT":
-            _, expr, _ = stmt
-            val = self.eval_expr(expr, env)
-            if isinstance(val, list):
-                pipe_formatted = " | ".join(str(item) for item in val)
-                print(f">>> {pipe_formatted}")
-            elif isinstance(val, dict):
-                props = ", ".join(f"{k}: {v}" for k, v in val.items())
-                print(f">>> Object {{{props}}}")
-            else:
-                print(f">>> {val}")
-
-        elif kind == "FN_DEF":
-            _, fn_type, fn_name, params, body, _ = stmt
-            self.functions[fn_name] = (fn_type, params, body)
-
-        elif kind == "FDEL_DEF":
-            _, fn_name, target_param, body, _ = stmt
-            self.del_functions[fn_name] = (target_param, body)
-
-        elif kind == "TRG_ACTION":
-            _, fn_name, target_var, line = stmt
-            if fn_name in self.del_functions:
-                env.delete(target_var)
+                target_var = str(self.eval_expr(arg_expr, env))
+            deleted = env.delete(target_var)
+            if deleted:
                 print(f"[Memory]: '{target_var}' has been wiped out by {fn_name}!")
-            elif fn_name in self.functions:
-                fn_type, params, body = self.functions[fn_name]
-                local_env = Environment(parent=self.global_env)
-                for s in body:
-                    self.eval_stmt(s, local_env)
             else:
-                raise TrappyError(f"No function named '{fn_name}' found to trigger!", line)
+                print(f"[Memory Alert]: Could not wipe '{target_var}' - not found.")
+        elif fn_name in self.functions:
+            self.call_function(fn_name, [arg_expr], env, line)
 
-        elif kind == "CWIN":
-            _, title, w, h, mode, _ = stmt
+    def _eval_call(self, stmt, env):
+        _, name, args, line = stmt
+        self.call_function(name, args, env, line)
+
+    def _eval_return(self, stmt, env):
+        _, expr, _ = stmt
+        val = self.eval_expr(expr, env)
+        raise ReturnSignal(val)
+
+    def _eval_add_var(self, stmt, env):
+        _, name, _ = stmt
+        env.declare(name)
+
+    def _eval_add_func(self, stmt, env):
+        pass
+
+    def _eval_add_obj(self, stmt, env):
+        _, obj_name, props, _ = stmt
+        if isinstance(props, str) and props in self.blueprints:
+            instance = {}
+            for k, v in self.blueprints[props].items():
+                instance[k] = self.eval_expr(v, env)
+            env.set(obj_name, instance)
+        else:
+            obj_data = {}
+            for k, v in props.items():
+                obj_data[k] = self.eval_expr(v, env)
+            env.set(obj_name, obj_data)
+
+    def _eval_add_type(self, stmt, env):
+        pass
+
+    def _eval_cwin(self, stmt, env):
+        _, title_expr, w_expr, h_expr, mode, _ = stmt
+        title = str(self.eval_expr(title_expr, env))
+        w = int(self.eval_coord(w_expr, env))
+        h = int(self.eval_coord(h_expr, env))
+        if tk:
             self.gui = TrappyGUI(title, w, h, mode)
-            print(f"[Trappy GUI]: Window '{title}' ({w}x{h}) created.")
 
-        elif kind == "WIN_STYLE":
-            _, cmd, win_name, color, _ = stmt
-            if self.gui:
-                bg_color = "black" if color in ("dark", "black") else color
-                self.gui.canvas.configure(bg=bg_color)
+    def _eval_win_style(self, stmt, env):
+        _, title_expr, color_val, _ = stmt
+        color = str(self.eval_expr(color_val, env)) if isinstance(color_val, tuple) else str(color_val)
+        if self.gui and self.gui.canvas:
+            self.gui.canvas.configure(bg=color)
 
-        elif kind == "LABEL":
-            _, text_expr, x_val, y_val, color, _ = stmt
-            if self.gui:
-                val = self.eval_expr(text_expr, env)
-                x = self.eval_coord(x_val, env)
-                y = self.eval_coord(y_val, env)
-                self.gui.canvas.create_text(x, y, text=str(val), fill=color, font=("Arial", 14, "bold"))
+    def _eval_label(self, stmt, env):
+        _, text_expr, x_expr, y_expr, color, _ = stmt
+        if self.gui and self.gui.canvas:
+            text = str(self.eval_expr(text_expr, env))
+            x = self.eval_coord(x_expr, env)
+            y = self.eval_coord(y_expr, env)
+            self.gui.canvas.create_text(x, y, text=text, fill=color, font=("Consolas", 11, "bold"))
 
-        elif kind == "REGLE":
-            _, x_raw, y_raw, w_raw, h_raw, color, _ = stmt
-            if self.gui:
-                x = self.eval_coord(x_raw, env)
-                y = self.eval_coord(y_raw, env)
-                w = self.eval_coord(w_raw, env)
-                h = self.eval_coord(h_raw, env)
-                self.gui.canvas.create_rectangle(x, y, x + w, y + h, fill=color, outline="")
+    def _eval_regle(self, stmt, env):
+        _, x_expr, y_expr, w_expr, h_expr, color, _ = stmt
+        if self.gui and self.gui.canvas:
+            x = self.eval_coord(x_expr, env)
+            y = self.eval_coord(y_expr, env)
+            w = self.eval_coord(w_expr, env)
+            h = self.eval_coord(h_expr, env)
+            self.gui.canvas.create_rectangle(x, y, x + w, y + h, fill=color, outline="")
 
-        elif kind == "CIRC":
-            _, x_raw, y_raw, r_raw, color, _ = stmt
-            if self.gui:
-                x = self.eval_coord(x_raw, env)
-                y = self.eval_coord(y_raw, env)
-                r = self.eval_coord(r_raw, env)
-                self.gui.canvas.create_oval(x - r, y - r, x + r, y + r, fill=color, outline="")
+    def _eval_circ(self, stmt, env):
+        _, x_expr, y_expr, r_expr, color, _ = stmt
+        if self.gui and self.gui.canvas:
+            x = self.eval_coord(x_expr, env)
+            y = self.eval_coord(y_expr, env)
+            r = self.eval_coord(r_expr, env)
+            self.gui.canvas.create_oval(x - r, y - r, x + r, y + r, fill=color, outline="")
 
-        elif kind == "LINE":
-            _, x1_raw, y1_raw, x2_raw, y2_raw, color, _ = stmt
-            if self.gui:
-                x1 = self.eval_coord(x1_raw, env)
-                y1 = self.eval_coord(y1_raw, env)
-                x2 = self.eval_coord(x2_raw, env)
-                y2 = self.eval_coord(y2_raw, env)
-                self.gui.canvas.create_line(x1, y1, x2, y2, fill=color, width=2)
+    def _eval_line(self, stmt, env):
+        _, x1_expr, y1_expr, x2_expr, y2_expr, color, _ = stmt
+        if self.gui and self.gui.canvas:
+            x1 = self.eval_coord(x1_expr, env)
+            y1 = self.eval_coord(y1_expr, env)
+            x2 = self.eval_coord(x2_expr, env)
+            y2 = self.eval_coord(y2_expr, env)
+            self.gui.canvas.create_line(x1, y1, x2, y2, fill=color, width=2)
 
-        elif kind == "CUBE3D":
-            _, x_raw, y_raw, z_raw, size_raw, rx_raw, ry_raw, color, _ = stmt
-            if self.gui:
-                cx = self.eval_coord(x_raw, env)
-                cy = self.eval_coord(y_raw, env)
-                cz = self.eval_coord(z_raw, env)
-                s = self.eval_coord(size_raw, env) / 2.0
-                rx = self.eval_coord(rx_raw, env)
-                ry = self.eval_coord(ry_raw, env)
+    def _eval_cube3d(self, stmt, env):
+        _, cx_e, cy_e, cz_e, size_e, rx_e, ry_e, color, _ = stmt
+        if not (self.gui and self.gui.canvas):
+            return
+        cx = self.eval_coord(cx_e, env)
+        cy = self.eval_coord(cy_e, env)
+        cz = self.eval_coord(cz_e, env)
+        size = self.eval_coord(size_e, env) / 2.0
+        pitch = math.radians(self.eval_coord(rx_e, env))
+        yaw = math.radians(self.eval_coord(ry_e, env))
+        camera_dist = 400.0
 
-                def proj(vx, vy, vz):
-                    rad_y = math.radians(ry)
-                    rad_x = math.radians(rx)
-                    x1 = vx * math.cos(rad_y) + vz * math.sin(rad_y)
-                    z1 = -vx * math.sin(rad_y) + vz * math.cos(rad_y)
-                    y2 = vy * math.cos(rad_x) - z1 * math.sin(rad_x)
-                    z2 = vy * math.sin(rad_x) + z1 * math.cos(rad_x) + cz
-                    fov = 350.0
-                    factor = fov / max(10.0, fov + z2)
-                    return cx + x1 * factor, cy + y2 * factor
+        vertices = [
+            (-size, -size, -size), (size, -size, -size), (size, size, -size), (-size, size, -size),
+            (-size, -size, size),  (size, -size, size),  (size, size, size),  (-size, size, size)
+        ]
+        edges = [
+            (0,1), (1,2), (2,3), (3,0),
+            (4,5), (5,6), (6,7), (7,4),
+            (0,4), (1,5), (2,6), (3,7)
+        ]
 
-                verts = [
-                    (-s, -s, -s), (s, -s, -s), (s, s, -s), (-s, s, -s),
-                    (-s, -s, s),  (s, -s, s),  (s, s, s),  (-s, s, s)
-                ]
-                pts = [proj(vx, vy, vz) for vx, vy, vz in verts]
-                edges = [
-                    (0,1), (1,2), (2,3), (3,0),
-                    (4,5), (5,6), (6,7), (7,4),
-                    (0,4), (1,5), (2,6), (3,7)
-                ]
-                for i1, i2 in edges:
-                    self.gui.canvas.create_line(pts[i1][0], pts[i1][1], pts[i2][0], pts[i2][1], fill=color, width=2)
+        proj = []
+        for vx, vy, vz in vertices:
+            x1 = vx * math.cos(yaw) + vz * math.sin(yaw)
+            z1 = -vx * math.sin(yaw) + vz * math.cos(yaw)
+            y1 = vy * math.cos(pitch) - z1 * math.sin(pitch)
+            z2 = vy * math.sin(pitch) + z1 * math.cos(pitch)
 
-        elif kind == "LINE3D":
-            _, x1_raw, y1_raw, z1_raw, x2_raw, y2_raw, z2_raw, rx_raw, ry_raw, color, _ = stmt
-            if self.gui:
-                cx, cy = 300, 200
-                x1 = self.eval_coord(x1_raw, env)
-                y1 = self.eval_coord(y1_raw, env)
-                z1 = self.eval_coord(z1_raw, env)
-                x2 = self.eval_coord(x2_raw, env)
-                y2 = self.eval_coord(y2_raw, env)
-                z2 = self.eval_coord(z2_raw, env)
-                rx = self.eval_coord(rx_raw, env)
-                ry = self.eval_coord(ry_raw, env)
-                def proj_pt(vx, vy, vz):
-                    rad_y = math.radians(ry)
-                    rad_x = math.radians(rx)
-                    x_r = vx * math.cos(rad_y) + vz * math.sin(rad_y)
-                    z_r = -vx * math.sin(rad_y) + vz * math.cos(rad_y)
-                    y_r = vy * math.cos(rad_x) - z_r * math.sin(rad_x)
-                    z_f = vy * math.sin(rad_x) + z_r * math.cos(rad_x)
-                    fov = 350.0
-                    factor = fov / max(10.0, fov + z_f)
-                    return cx + x_r * factor, cy + y_r * factor
-                p1 = proj_pt(x1, y1, z1)
-                p2 = proj_pt(x2, y2, z2)
-                self.gui.canvas.create_line(p1[0], p1[1], p2[0], p2[1], fill=color, width=2)
+            depth = camera_dist + z2 + cz
+            if depth < 1.0:
+                depth = 1.0
+            fov = camera_dist / depth
+            proj.append((cx + x1 * fov, cy + y1 * fov))
 
-        elif kind == "SPHERE3D":
-            _, x_raw, y_raw, z_raw, r_raw, rx_raw, ry_raw, color, _ = stmt
-            if self.gui:
-                cx = self.eval_coord(x_raw, env)
-                cy = self.eval_coord(y_raw, env)
-                cz = self.eval_coord(z_raw, env)
-                rad = self.eval_coord(r_raw, env)
-                rx = self.eval_coord(rx_raw, env)
-                ry = self.eval_coord(ry_raw, env)
-                def proj_s(vx, vy, vz):
-                    r_y = math.radians(ry)
-                    r_x = math.radians(rx)
-                    x1 = vx * math.cos(r_y) + vz * math.sin(r_y)
-                    z1 = -vx * math.sin(r_y) + vz * math.cos(r_y)
-                    y2 = vy * math.cos(r_x) - z1 * math.sin(r_x)
-                    z2 = vy * math.sin(r_x) + z1 * math.cos(r_x) + cz
-                    fov = 350.0
-                    factor = fov / max(10.0, fov + z2)
-                    return cx + x1 * factor, cy + y2 * factor
-                steps = 12
-                pts_xy = [proj_s(rad * math.cos(2*math.pi*i/steps), rad * math.sin(2*math.pi*i/steps), 0) for i in range(steps+1)]
-                pts_xz = [proj_s(rad * math.cos(2*math.pi*i/steps), 0, rad * math.sin(2*math.pi*i/steps)) for i in range(steps+1)]
-                pts_yz = [proj_s(0, rad * math.cos(2*math.pi*i/steps), rad * math.sin(2*math.pi*i/steps)) for i in range(steps+1)]
-                for r_pts in (pts_xy, pts_xz, pts_yz):
-                    for i in range(steps):
-                        self.gui.canvas.create_line(r_pts[i][0], r_pts[i][1], r_pts[i+1][0], r_pts[i+1][1], fill=color, width=2)
+        for u, v in edges:
+            self.gui.canvas.create_line(proj[u][0], proj[u][1], proj[v][0], proj[v][1], fill=color, width=2)
 
-        elif kind == "PYRAMID3D":
-            _, x_raw, y_raw, z_raw, size_raw, rx_raw, ry_raw, color, _ = stmt
-            if self.gui:
-                cx = self.eval_coord(x_raw, env)
-                cy = self.eval_coord(y_raw, env)
-                cz = self.eval_coord(z_raw, env)
-                s = self.eval_coord(size_raw, env) / 2.0
-                rx = self.eval_coord(rx_raw, env)
-                ry = self.eval_coord(ry_raw, env)
-                def proj_p(vx, vy, vz):
-                    r_y = math.radians(ry)
-                    r_x = math.radians(rx)
-                    x1 = vx * math.cos(r_y) + vz * math.sin(r_y)
-                    z1 = -vx * math.sin(r_y) + vz * math.cos(r_y)
-                    y2 = vy * math.cos(r_x) - z1 * math.sin(r_x)
-                    z2 = vy * math.sin(r_x) + z1 * math.cos(r_x) + cz
-                    fov = 350.0
-                    factor = fov / max(10.0, fov + z2)
-                    return cx + x1 * factor, cy + y2 * factor
-                verts = [
-                    (-s, s, -s), (s, s, -s), (s, s, s), (-s, s, s), (0, -s, 0)
-                ]
-                pts = [proj_p(vx, vy, vz) for vx, vy, vz in verts]
-                edges = [
-                    (0,1), (1,2), (2,3), (3,0),
-                    (0,4), (1,4), (2,4), (3,4)
-                ]
-                for i1, i2 in edges:
-                    self.gui.canvas.create_line(pts[i1][0], pts[i1][1], pts[i2][0], pts[i2][1], fill=color, width=2)
+    def _eval_line3d(self, stmt, env):
+        _, x1_e, y1_e, z1_e, x2_e, y2_e, z2_e, rx_e, ry_e, color, _ = stmt
+        if not (self.gui and self.gui.canvas):
+            return
+        x1_val = self.eval_coord(x1_e, env)
+        y1_val = self.eval_coord(y1_e, env)
+        z1_val = self.eval_coord(z1_e, env)
+        x2_val = self.eval_coord(x2_e, env)
+        y2_val = self.eval_coord(y2_e, env)
+        z2_val = self.eval_coord(z2_e, env)
+        pitch = math.radians(self.eval_coord(rx_e, env))
+        yaw = math.radians(self.eval_coord(ry_e, env))
+        camera_dist = 400.0
 
-        elif kind == "BUTTON":
-            _, btn_text, x_raw, y_raw, action_fn, _ = stmt
-            if self.gui:
-                x = self.eval_coord(x_raw, env)
-                y = self.eval_coord(y_raw, env)
-                btn = tk.Button(self.gui.root, text=btn_text, command=lambda: self.trigger_action(action_fn))
-                btn.place(x=x, y=y)
+        pts = []
+        for vx, vy, vz in [(x1_val, y1_val, z1_val), (x2_val, y2_val, z2_val)]:
+            x1 = vx * math.cos(yaw) + vz * math.sin(yaw)
+            z1 = -vx * math.sin(yaw) + vz * math.cos(yaw)
+            y1 = vy * math.cos(pitch) - z1 * math.sin(pitch)
+            z2 = vy * math.sin(pitch) + z1 * math.cos(pitch)
+            depth = camera_dist + z2
+            if depth < 1.0:
+                depth = 1.0
+            fov = camera_dist / depth
+            pts.append((x1 * fov + 300, y1 * fov + 200))
 
-        elif kind == "INP":
-            _, placeholder, x_raw, y_raw, var_name, _ = stmt
-            if self.gui:
-                x = self.eval_coord(x_raw, env)
-                y = self.eval_coord(y_raw, env)
-                entry = tk.Entry(self.gui.root)
-                entry.insert(0, placeholder)
-                entry.place(x=x, y=y)
-                entry.bind("<KeyRelease>", lambda e: env.set(var_name, entry.get()))
+        self.gui.canvas.create_line(pts[0][0], pts[0][1], pts[1][0], pts[1][1], fill=color, width=2)
 
-        elif kind == "GLOOP":
-            _, body, _ = stmt
-            self.game_loop_body = body
+    def _eval_sphere3d(self, stmt, env):
+        _, cx_e, cy_e, cz_e, rad_e, rx_e, ry_e, color, _ = stmt
+        if not (self.gui and self.gui.canvas):
+            return
+        cx = self.eval_coord(cx_e, env)
+        cy = self.eval_coord(cy_e, env)
+        cz = self.eval_coord(cz_e, env)
+        rad = self.eval_coord(rad_e, env)
+        pitch = math.radians(self.eval_coord(rx_e, env))
+        yaw = math.radians(self.eval_coord(ry_e, env))
+        camera_dist = 400.0
 
-        elif kind == "FPS_SET":
-            _, mode, target_fps, _ = stmt
-            self.fps_mode = mode
-            if target_fps:
-                self.target_fps = target_fps
-            print(f"[Trappy Engine]: FPS set to {mode.upper()}" + (f" ({target_fps})" if target_fps else ""))
+        rings = []
+        seg = 12
+        for ang in range(seg):
+            t = 2.0 * math.pi * ang / seg
+            rings.append((rad * math.cos(t), 0, rad * math.sin(t)))
+        for ang in range(seg):
+            t = 2.0 * math.pi * ang / seg
+            rings.append((rad * math.cos(t), rad * math.sin(t), 0))
 
-        elif kind == "KEY_CHECK":
-            _, key_name, is_flkey, body, _ = stmt
-            target_key = key_name.upper()
-            if self.gui and target_key in self.gui.pressed_keys:
-                for s in body:
-                    self.eval_stmt(s, env)
-                if is_flkey:
-                    self.gui.pressed_keys.discard(target_key)
+        proj = []
+        for vx, vy, vz in rings:
+            x1 = vx * math.cos(yaw) + vz * math.sin(yaw)
+            z1 = -vx * math.sin(yaw) + vz * math.cos(yaw)
+            y1 = vy * math.cos(pitch) - z1 * math.sin(pitch)
+            z2 = vy * math.sin(pitch) + z1 * math.cos(pitch)
+            depth = camera_dist + z2 + cz
+            if depth < 1.0:
+                depth = 1.0
+            fov = camera_dist / depth
+            proj.append((cx + x1 * fov, cy + y1 * fov))
 
-        elif kind == "PLAY_AUDIO":
-            _, snd_file, _ = stmt
-            if winsound:
-                try:
-                    safe_snd = sanitize_path(snd_file)
-                    winsound.PlaySound(safe_snd, winsound.SND_FILENAME | winsound.SND_ASYNC)
-                except Exception:
-                    winsound.MessageBeep()
+        for k in range(seg):
+            n1 = (k + 1) % seg
+            self.gui.canvas.create_line(proj[k][0], proj[k][1], proj[n1][0], proj[n1][1], fill=color, width=1)
+            n2 = seg + ((k + 1) % seg)
+            self.gui.canvas.create_line(proj[seg + k][0], proj[seg + k][1], proj[n2][0], proj[n2][1], fill=color, width=1)
 
-        elif kind == "BEEP_AUDIO":
-            _, freq_raw, dur_raw, _ = stmt
-            if winsound:
-                freq = int(self.eval_coord(freq_raw, env))
-                dur = int(self.eval_coord(dur_raw, env))
-                try:
-                    winsound.Beep(max(37, min(32767, freq)), max(10, dur))
-                except Exception:
-                    pass
+    def _eval_pyramid3d(self, stmt, env):
+        _, cx_e, cy_e, cz_e, size_e, rx_e, ry_e, color, _ = stmt
+        if not (self.gui and self.gui.canvas):
+            return
+        cx = self.eval_coord(cx_e, env)
+        cy = self.eval_coord(cy_e, env)
+        cz = self.eval_coord(cz_e, env)
+        s = self.eval_coord(size_e, env) / 2.0
+        pitch = math.radians(self.eval_coord(rx_e, env))
+        yaw = math.radians(self.eval_coord(ry_e, env))
+        camera_dist = 400.0
 
-        elif kind == "SYNTH_AUDIO":
-            _, wave_raw, freq_raw, dur_raw, _ = stmt
-            if winsound:
-                try:
-                    freq = int(self.eval_coord(freq_raw, env))
-                    dur = int(self.eval_coord(dur_raw, env))
-                    winsound.Beep(max(37, min(32767, freq)), max(10, dur))
-                except Exception:
-                    pass
+        vertices = [
+            (-s, s, -s), (s, s, -s), (s, s, s), (-s, s, s),
+            (0, -s, 0)
+        ]
+        edges = [
+            (0,1), (1,2), (2,3), (3,0),
+            (0,4), (1,4), (2,4), (3,4)
+        ]
 
-        elif kind == "WRITE_FILE":
-            _, filename, val_expr, dest_dir, line = stmt
-            val = self.eval_expr(val_expr, env)
-            target_file = sanitize_path(filename, dest_dir)
-            with open(target_file, "w") as f:
-                f.write(str(val))
-            print(f"[Trappy IO]: Saved data to '{target_file}'")
+        proj = []
+        for vx, vy, vz in vertices:
+            x1 = vx * math.cos(yaw) + vz * math.sin(yaw)
+            z1 = -vx * math.sin(yaw) + vz * math.cos(yaw)
+            y1 = vy * math.cos(pitch) - z1 * math.sin(pitch)
+            z2 = vy * math.sin(pitch) + z1 * math.cos(pitch)
+            depth = camera_dist + z2 + cz
+            if depth < 1.0:
+                depth = 1.0
+            fov = camera_dist / depth
+            proj.append((cx + x1 * fov, cy + y1 * fov))
 
-        elif kind == "HTTP_GET":
-            _, url_expr, var_name, line = stmt
-            url = str(self.eval_expr(url_expr, env))
+        for u, v in edges:
+            self.gui.canvas.create_line(proj[u][0], proj[u][1], proj[v][0], proj[v][1], fill=color, width=2)
+
+    def _eval_button(self, stmt, env):
+        _, label_text_expr, x_expr, y_expr, fn_name, _ = stmt
+        if self.gui and self.gui.root:
+            label_text = str(self.eval_expr(label_text_expr, env))
+            x = self.eval_coord(x_expr, env)
+            y = self.eval_coord(y_expr, env)
+            btn = tk.Button(self.gui.root, text=label_text, command=lambda: self.trigger_action(fn_name))
+            btn.place(x=x, y=y)
+
+    def _eval_input(self, stmt, env):
+        _, placeholder_expr, x_expr, y_expr, var_name, _ = stmt
+        if self.gui and self.gui.root:
+            placeholder = str(self.eval_expr(placeholder_expr, env))
+            x = self.eval_coord(x_expr, env)
+            y = self.eval_coord(y_expr, env)
+            entry = tk.Entry(self.gui.root)
+            entry.insert(0, placeholder)
+            entry.place(x=x, y=y)
+            entry.bind("<KeyRelease>", lambda e: env.set(var_name, entry.get()))
+
+    def _eval_gloop(self, stmt, env):
+        _, body, _ = stmt
+        self.game_loop_body = body
+
+    def _eval_fps_set(self, stmt, env):
+        _, mode, rate, _ = stmt
+        self.fps_mode = mode
+        self.target_fps = int(rate) if rate else 60
+
+    def _eval_play_audio(self, stmt, env):
+        _, sound_name, line = stmt
+        if winsound:
             try:
-                req = urllib.request.Request(
-                    url,
-                    headers={'User-Agent': 'Trappy/1.0 (Universal Web Client)'}
-                )
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    body = response.read().decode('utf-8', errors='ignore')
-                    env.set(var_name, body)
+                safe_sound = sanitize_path(sound_name)
+                winsound.PlaySound(safe_sound, winsound.SND_FILENAME | winsound.SND_ASYNC)
             except Exception as e:
-                env.set(var_name, f"[Trappy Web Error]: {e}")
+                print(f"[Trappy Audio]: Could not play sound '{sound_name}': {e}")
 
-        elif kind == "HTTP_POST":
-            _, url_expr, data_expr, var_name, line = stmt
-            url = str(self.eval_expr(url_expr, env))
-            data_raw = self.eval_expr(data_expr, env)
-            payload = json.dumps(data_raw).encode('utf-8') if isinstance(data_raw, dict) else str(data_raw).encode('utf-8')
+    def _eval_beep_audio(self, stmt, env):
+        _, freq_expr, duration_expr, _ = stmt
+        if winsound:
             try:
-                req = urllib.request.Request(
-                    url,
-                    data=payload,
-                    headers={
-                        'User-Agent': 'Trappy/1.0',
-                        'Content-Type': 'application/json' if isinstance(data_raw, dict) else 'text/plain'
-                    }
-                )
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    body = response.read().decode('utf-8', errors='ignore')
-                    env.set(var_name, body)
-            except Exception as e:
-                env.set(var_name, f"[Trappy Web Error]: {e}")
-
-        elif kind == "DOWNLOAD_FILE":
-            _, url_expr, dest_file, line = stmt
-            url = str(self.eval_expr(url_expr, env))
-            target_path = sanitize_path(dest_file)
-            try:
-                req = urllib.request.Request(
-                    url,
-                    headers={'User-Agent': 'Trappy/0.9'}
-                )
-                with urllib.request.urlopen(req, timeout=15) as response:
-                    content = response.read()
-                with open(target_path, 'wb') as f:
-                    f.write(content)
-                print(f"[Trappy Web]: Successfully downloaded '{url}' -> '{target_path}'")
-            except Exception as e:
-                raise TrappyError(f"Download failed: {e}", line)
-
-        elif kind == "PACK_DATA":
-            _, data_expr, var_name, line = stmt
-            data_val = self.eval_expr(data_expr, env)
-            try:
-                packet_str = "TRP:" + json.dumps(data_val)
-                env.set(var_name, packet_str)
-            except Exception as e:
-                env.set(var_name, f"TRP:{data_val}")
-
-        elif kind == "UNPACK_DATA":
-            _, data_expr, var_name, line = stmt
-            raw_pkt = str(self.eval_expr(data_expr, env))
-            if raw_pkt.startswith("TRP:"):
-                raw_pkt = raw_pkt[4:]
-            try:
-                parsed = json.loads(raw_pkt)
-                env.set(var_name, parsed)
+                freq = int(self.eval_expr(freq_expr, env))
+                duration = int(self.eval_expr(duration_expr, env))
+                winsound.Beep(max(37, min(32767, freq)), max(1, duration))
             except Exception:
-                env.set(var_name, raw_pkt)
+                pass
 
-        elif kind == "CLI_CONNECT":
-            _, host_expr, port_expr, var_name, line = stmt
-            host = str(self.eval_expr(host_expr, env))
-            port = int(self.eval_expr(port_expr, env))
-            if host.lower() in ("loopback", "offline"):
+    def _eval_synth_audio(self, stmt, env):
+        _, wave_type_expr, freq_expr, duration_expr, _ = stmt
+        if winsound:
+            try:
+                freq = int(self.eval_expr(freq_expr, env))
+                duration = int(self.eval_expr(duration_expr, env))
+                winsound.Beep(max(37, min(32767, freq)), max(1, duration))
+            except Exception:
+                pass
+
+    def _eval_write_file(self, stmt, env):
+        _, content_expr, filename, line = stmt
+        content = str(self.eval_expr(content_expr, env))
+        safe_name = sanitize_path(filename)
+        with open(safe_name, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    def _eval_http_get(self, stmt, env):
+        _, url_expr, var_name, line = stmt
+        url = str(self.eval_expr(url_expr, env))
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'TrappyRuntime/1.1'})
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                data = resp.read().decode('utf-8', errors='ignore')
+                env.set(var_name, data)
+        except Exception as e:
+            env.set(var_name, f"Error: {e}")
+
+    def _eval_http_post(self, stmt, env):
+        _, url_expr, data_expr, var_name, line = stmt
+        url = str(self.eval_expr(url_expr, env))
+        data_raw = self.eval_expr(data_expr, env)
+        try:
+            if isinstance(data_raw, dict):
+                post_data = json.dumps(data_raw).encode('utf-8')
+                content_type = 'application/json'
+            else:
+                post_data = str(data_raw).encode('utf-8')
+                content_type = 'text/plain'
+            req = urllib.request.Request(url, data=post_data, headers={'User-Agent': 'TrappyRuntime/1.1', 'Content-Type': content_type}, method='POST')
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                data = resp.read().decode('utf-8', errors='ignore')
+                env.set(var_name, data)
+        except Exception as e:
+            env.set(var_name, f"Error: {e}")
+
+    def _eval_download_file(self, stmt, env):
+        _, url_expr, file_path, line = stmt
+        url = str(self.eval_expr(url_expr, env))
+        safe_path = sanitize_path(file_path)
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'TrappyRuntime/1.1'})
+            with urllib.request.urlopen(req, timeout=10.0) as resp:
+                with open(safe_path, "wb") as f:
+                    f.write(resp.read())
+            print(f"[Trappy Web]: Successfully downloaded '{url}' -> '{safe_path}'")
+        except Exception as e:
+            raise TrappyError(f"Download failed: {e}", line)
+
+    def _eval_cli_connect(self, stmt, env):
+        _, host_expr, port_expr, var_name, line = stmt
+        host = str(self.eval_expr(host_expr, env))
+        port = int(self.eval_expr(port_expr, env))
+        if host.lower() in ("loopback", "offline"):
+            sock = VirtualLoopbackSocket(channel_id=f"port_{port}")
+            env.set(var_name, sock)
+            print(f"[Trappy Client]: Connected to offline loopback bus (port {port})")
+        else:
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(1.0)
+                s.connect((host, port))
+                s.setblocking(False)
+                env.set(var_name, s)
+                print(f"[Trappy Client]: Connected to {host}:{port}")
+            except Exception as e:
                 sock = VirtualLoopbackSocket(channel_id=f"port_{port}")
                 env.set(var_name, sock)
-                print(f"[Trappy Client]: Connected to offline loopback bus (port {port})")
-            else:
-                try:
-                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    s.settimeout(1.0)
-                    s.connect((host, port))
-                    s.settimeout(0.05)
-                    env.set(var_name, s)
-                    print(f"[Trappy Client]: Connected to {host}:{port}")
-                except Exception as e:
-                    sock = VirtualLoopbackSocket(channel_id=f"port_{port}")
-                    env.set(var_name, sock)
-                    print(f"[Trappy Client]: Offline fallback active -> loopback channel {port}")
+                print(f"[Trappy Client]: Offline fallback active -> loopback channel {port}")
 
-        elif kind == "CLI_SEND":
-            _, client_name, data_expr, line = stmt
-            sock = env.get(client_name, line)
-            payload = self.eval_expr(data_expr, env)
-            if sock and hasattr(sock, "sendall"):
-                try:
-                    msg = str(payload) + "\n"
-                    sock.sendall(msg.encode('utf-8'))
-                except Exception as e:
-                    pass
-            elif sock and hasattr(sock, "send"):
-                sock.send(payload)
+    def _eval_cli_send(self, stmt, env):
+        _, client_name, data_expr, line = stmt
+        sock = env.get(client_name, line)
+        payload = self.eval_expr(data_expr, env)
+        if isinstance(payload, str):
+            payload_bytes = payload.encode('utf-8')
+        elif isinstance(payload, bytes):
+            payload_bytes = payload
+        else:
+            payload_bytes = str(payload).encode('utf-8')
 
-        elif kind == "CLI_RECV":
-            _, client_name, var_name, line = stmt
-            sock = env.get(client_name, line)
-            msg = ""
-            if sock and hasattr(sock, "recv"):
-                try:
+        if sock and hasattr(sock, "sendall"):
+            try:
+                sock.sendall(payload_bytes)
+            except Exception as e:
+                print(f"[Trappy Client Error]: Send failed: {e}")
+
+    def _eval_cli_recv(self, stmt, env):
+        _, client_name, var_name, line = stmt
+        sock = env.get(client_name, line)
+        msg = ""
+        if sock and hasattr(sock, "recv"):
+            try:
+                if isinstance(sock, VirtualLoopbackSocket):
                     raw = sock.recv(4096)
-                    if isinstance(raw, bytes):
-                        msg = raw.decode('utf-8', errors='ignore').strip()
+                else:
+                    ready, _, _ = select.select([sock], [], [], 0)
+                    if ready:
+                        raw = sock.recv(4096)
                     else:
-                        msg = str(raw).strip()
-                except socket.timeout:
-                    msg = ""
-                except Exception:
-                    msg = ""
-            env.set(var_name, msg)
+                        raw = b""
+                if isinstance(raw, bytes):
+                    msg = raw.decode('utf-8', errors='ignore').strip()
+                else:
+                    msg = str(raw).strip()
+            except Exception:
+                msg = ""
+        env.set(var_name, msg)
 
-        elif kind == "CLI_CLOSE":
-            _, client_name, line = stmt
-            sock = env.get(client_name, line)
-            if sock and hasattr(sock, "close"):
-                try:
-                    sock.close()
-                except Exception:
-                    pass
-            env.set(client_name, None)
-
-        elif kind == "SRV_LISTEN":
-            _, port_expr, var_name, line = stmt
-            port = int(self.eval_expr(port_expr, env))
+    def _eval_cli_close(self, stmt, env):
+        _, client_name, line = stmt
+        sock = env.get(client_name, line)
+        if sock and hasattr(sock, "close"):
             try:
-                srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                srv.bind(("0.0.0.0", port))
-                srv.listen(5)
-                srv.settimeout(0.05)
-                env.set(var_name, srv)
-                print(f"[Trappy Server]: Listening on port {port}")
-            except Exception as e:
-                env.set(var_name, None)
-                print(f"[Trappy Server]: Failed to bind on port {port}: {e}")
-
-        elif kind == "SRV_ACCEPT":
-            _, server_name, var_name, line = stmt
-            srv = env.get(server_name, line)
-            if srv and isinstance(srv, socket.socket):
-                try:
-                    conn, addr = srv.accept()
-                    conn.settimeout(0.05)
-                    env.set(var_name, conn)
-                except socket.timeout:
-                    env.set(var_name, None)
-                except Exception:
-                    env.set(var_name, None)
-            else:
-                env.set(var_name, None)
-
-        elif kind == "MEM_ALLOC":
-            _, size_expr, var_name, line = stmt
-            size = int(self.eval_expr(size_expr, env))
-            ptr = len(self.memory_blocks) + 1
-            self.memory_blocks[ptr] = bytearray(size)
-            env.set(var_name, ptr)
-
-        elif kind == "MEM_WRITE":
-            _, ptr_name, offset_expr, byte_expr, line = stmt
-            ptr = env.get(ptr_name, line)
-            offset = int(self.eval_expr(offset_expr, env))
-            b = int(self.eval_expr(byte_expr, env))
-            if ptr in self.memory_blocks:
-                block = self.memory_blocks[ptr]
-                if 0 <= offset < len(block):
-                    block[offset] = b & 0xFF
-
-        elif kind == "MEM_READ":
-            _, ptr_name, offset_expr, var_name, line = stmt
-            ptr = env.get(ptr_name, line)
-            offset = int(self.eval_expr(offset_expr, env))
-            val = 0
-            if ptr in self.memory_blocks:
-                block = self.memory_blocks[ptr]
-                if 0 <= offset < len(block):
-                    val = block[offset]
-            env.set(var_name, val)
-
-        elif kind == "SYS_EXEC":
-            _, cmd_expr, var_name, line = stmt
-            cmd = str(self.eval_expr(cmd_expr, env))
-            try:
-                res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=5)
-                env.set(var_name, res.stdout.strip())
-            except Exception as e:
-                env.set(var_name, f"[Sys Error]: {e}")
-
-        elif kind == "SYS_ENV":
-            _, name_expr, var_name, line = stmt
-            k = str(self.eval_expr(name_expr, env))
-            env.set(var_name, os.environ.get(k, ""))
-
-        elif kind == "DISCORD_WEBHOOK":
-            _, url_expr, msg_expr, var_name, line = stmt
-            url = str(self.eval_expr(url_expr, env))
-            msg = str(self.eval_expr(msg_expr, env))
-            try:
-                payload = json.dumps({"content": msg}).encode('utf-8')
-                req = urllib.request.Request(
-                    url,
-                    data=payload,
-                    headers={
-                        'User-Agent': 'Trappy-Discord/1.0',
-                        'Content-Type': 'application/json'
-                    }
-                )
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    env.set(var_name, resp.status)
-            except urllib.error.HTTPError as he:
-                env.set(var_name, he.code)
-            except Exception as e:
-                env.set(var_name, f"[Discord Error]: {e}")
-
-        elif kind == "WS_CONNECT":
-            _, url_expr, var_name, line = stmt
-            url = str(self.eval_expr(url_expr, env))
-            sock = VirtualLoopbackSocket(channel_id=url)
-            env.set(var_name, sock)
-            print(f"[Trappy Socket]: Connected stream '{url}'")
-
-        elif kind == "WS_SEND":
-            _, sock_name, msg_expr, line = stmt
-            sock = env.get(sock_name, line)
-            msg = self.eval_expr(msg_expr, env)
-            if sock and hasattr(sock, "sendall"):
-                sock.sendall(msg)
-            elif sock and hasattr(sock, "send"):
-                sock.send(msg)
-
-        elif kind == "WS_RECV":
-            _, sock_name, var_name, line = stmt
-            sock = env.get(sock_name, line)
-            val = ""
-            if sock and hasattr(sock, "recv"):
-                raw = sock.recv(4096)
-                val = raw.decode('utf-8', errors='ignore') if isinstance(raw, bytes) else str(raw)
-            env.set(var_name, val)
-
-        elif kind == "WS_CLOSE":
-            _, sock_name, line = stmt
-            sock = env.get(sock_name, line)
-            if sock and hasattr(sock, "close"):
                 sock.close()
-            env.set(sock_name, None)
-
-        elif kind == "JSON_PARSE":
-            _, str_expr, var_name, line = stmt
-            raw = str(self.eval_expr(str_expr, env))
-            try:
-                parsed = json.loads(raw)
-                env.set(var_name, parsed)
             except Exception:
-                env.set(var_name, None)
+                pass
 
-        elif kind == "JSON_DUMP":
-            _, obj_expr, var_name, line = stmt
-            obj = self.eval_expr(obj_expr, env)
+    def _eval_srv_listen(self, stmt, env):
+        _, port_expr, var_name, line = stmt
+        port = int(self.eval_expr(port_expr, env))
+        try:
+            srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            srv.bind(("0.0.0.0", port))
+            srv.listen(5)
+            srv.setblocking(False)
+            env.set(var_name, srv)
+            print(f"[Trappy Server]: Listening on port {port}")
+        except Exception as e:
+            print(f"[Trappy Server]: Failed to bind on port {port}: {e}")
+            env.set(var_name, None)
+
+    def _eval_srv_accept(self, stmt, env):
+        _, server_name, var_name, line = stmt
+        srv = env.get(server_name, line)
+        client_sock = None
+        if srv:
             try:
-                dumped = json.dumps(obj)
-                env.set(var_name, dumped)
+                ready, _, _ = select.select([srv], [], [], 0)
+                if ready:
+                    client_sock, _ = srv.accept()
+                    client_sock.setblocking(False)
             except Exception:
-                env.set(var_name, str(obj))
+                client_sock = None
+        env.set(var_name, client_sock)
 
-        elif kind == "DICT_NEW":
-            _, var_name, line = stmt
-            env.declare(var_name)
-            env.set(var_name, {})
+    def _eval_mem_alloc(self, stmt, env):
+        _, size_expr, var_name, _ = stmt
+        size = int(self.eval_expr(size_expr, env))
+        buf = bytearray(size)
+        buf_id = len(self.memory_blocks) + 1
+        self.memory_blocks[buf_id] = buf
+        env.set(var_name, buf_id)
 
-        elif kind == "DSET":
-            _, dict_name, key_expr, val_expr, line = stmt
-            d = env.get(dict_name, line)
-            k = self.eval_expr(key_expr, env)
+    def _eval_mem_write(self, stmt, env):
+        _, buf_name, offset_expr, byte_expr, line = stmt
+        buf_id = env.get(buf_name, line)
+        offset = int(self.eval_expr(offset_expr, env))
+        val = int(self.eval_expr(byte_expr, env))
+        if buf_id in self.memory_blocks:
+            buf = self.memory_blocks[buf_id]
+            if 0 <= offset < len(buf):
+                buf[offset] = val & 0xFF
+            else:
+                raise TrappyError(f"Memory out of bounds write at offset {offset}", line)
+
+    def _eval_mem_read(self, stmt, env):
+        _, buf_name, offset_expr, var_name, line = stmt
+        buf_id = env.get(buf_name, line)
+        offset = int(self.eval_expr(offset_expr, env))
+        if buf_id in self.memory_blocks:
+            buf = self.memory_blocks[buf_id]
+            if 0 <= offset < len(buf):
+                env.set(var_name, buf[offset])
+            else:
+                raise TrappyError(f"Memory out of bounds read at offset {offset}", line)
+
+    def _eval_sys_exec(self, stmt, env):
+        _, cmd_expr, var_name, _ = stmt
+        cmd = str(self.eval_expr(cmd_expr, env))
+        try:
+            res = subprocess.check_output(cmd, shell=True, text=True, stderr=subprocess.STDOUT)
+            env.set(var_name, res.strip())
+        except Exception as e:
+            env.set(var_name, f"Exec Error: {e}")
+
+    def _eval_sys_env(self, stmt, env):
+        _, key_expr, var_name, _ = stmt
+        key = str(self.eval_expr(key_expr, env))
+        env.set(var_name, os.environ.get(key, ""))
+
+    def _eval_discord_webhook(self, stmt, env):
+        _, url_expr, msg_expr, status_var, _ = stmt
+        url = str(self.eval_expr(url_expr, env))
+        msg = str(self.eval_expr(msg_expr, env))
+        status = 0
+        try:
+            payload = json.dumps({"content": msg}).encode("utf-8")
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json", "User-Agent": "TrappyDiscord/1.1"}, method="POST")
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                status = resp.status
+        except urllib.error.HTTPError as he:
+            status = he.code
+        except Exception:
+            status = 0
+        env.set(status_var, status)
+
+    def _eval_ws_connect(self, stmt, env):
+        pass
+
+    def _eval_ws_send(self, stmt, env):
+        pass
+
+    def _eval_ws_recv(self, stmt, env):
+        pass
+
+    def _eval_ws_close(self, stmt, env):
+        pass
+
+    def _eval_json_parse(self, stmt, env):
+        _, json_str_expr, dest_var, line = stmt
+        raw_str = str(self.eval_expr(json_str_expr, env))
+        try:
+            parsed = json.loads(raw_str)
+            env.set(dest_var, parsed)
+        except Exception as e:
+            raise TrappyError(f"JSON Parse failed: {e}", line)
+
+    def _eval_json_dump(self, stmt, env):
+        _, obj_expr, dest_var, _ = stmt
+        val = self.eval_expr(obj_expr, env)
+        dumped = json.dumps(val)
+        env.set(dest_var, dumped)
+
+    def _eval_dict_new(self, stmt, env):
+        _, dict_name, _ = stmt
+        env.set(dict_name, {})
+
+    def _eval_dset(self, stmt, env):
+        _, dict_name, key_expr, val_expr, line = stmt
+        d = env.get(dict_name, line)
+        if isinstance(d, dict):
+            k = str(self.eval_expr(key_expr, env))
             v = self.eval_expr(val_expr, env)
-            if isinstance(d, dict):
-                d[k] = v
+            d[k] = v
+        else:
+            raise TrappyError(f"'{dict_name}' is not a dictionary!", line)
 
-        elif kind == "DGET":
-            _, dict_name, key_expr, var_name, line = stmt
-            d = env.get(dict_name, line)
-            k = self.eval_expr(key_expr, env)
-            val = d.get(k) if isinstance(d, dict) else None
-            env.set(var_name, val)
+    def _eval_dget(self, stmt, env):
+        _, dict_name, key_expr, dest_var, line = stmt
+        d = env.get(dict_name, line)
+        if isinstance(d, dict):
+            k = str(self.eval_expr(key_expr, env))
+            env.set(dest_var, d.get(k, 0))
+        else:
+            raise TrappyError(f"'{dict_name}' is not a dictionary!", line)
 
-        elif kind == "DKEYS":
-            _, dict_name, var_name, line = stmt
-            d = env.get(dict_name, line)
-            keys = list(d.keys()) if isinstance(d, dict) else []
-            env.set(var_name, keys)
+    def _eval_dkeys(self, stmt, env):
+        _, dict_name, dest_var, line = stmt
+        d = env.get(dict_name, line)
+        if isinstance(d, dict):
+            env.set(dest_var, list(d.keys()))
+        else:
+            raise TrappyError(f"'{dict_name}' is not a dictionary!", line)
 
-        elif kind == "LGET":
-            _, list_name, idx_expr, var_name, line = stmt
-            lst = env.get(list_name, line)
+    def _eval_lget(self, stmt, env):
+        _, list_name, idx_expr, dest_var, line = stmt
+        lst = env.get(list_name, line)
+        if isinstance(lst, list):
             idx = int(self.eval_expr(idx_expr, env))
-            val = None
-            if isinstance(lst, (list, tuple)) and 0 <= idx < len(lst):
-                val = lst[idx]
-            env.set(var_name, val)
+            if 0 <= idx < len(lst):
+                env.set(dest_var, lst[idx])
+            else:
+                env.set(dest_var, 0)
+        else:
+            raise TrappyError(f"'{list_name}' is not a list!", line)
 
-        elif kind == "LSET":
-            _, list_name, idx_expr, val_expr, line = stmt
-            lst = env.get(list_name, line)
+    def _eval_lset(self, stmt, env):
+        _, list_name, idx_expr, val_expr, line = stmt
+        lst = env.get(list_name, line)
+        if isinstance(lst, list):
             idx = int(self.eval_expr(idx_expr, env))
-            val = self.eval_expr(val_expr, env)
-            if isinstance(lst, list) and 0 <= idx < len(lst):
-                lst[idx] = val
+            v = self.eval_expr(val_expr, env)
+            if 0 <= idx < len(lst):
+                lst[idx] = v
+            else:
+                raise TrappyError(f"List index {idx} out of range (length {len(lst)})", line)
+        else:
+            raise TrappyError(f"'{list_name}' is not a list!", line)
 
-        elif kind == "LLEN":
-            _, list_name, var_name, line = stmt
-            lst = env.get(list_name, line)
-            l = len(lst) if isinstance(lst, (list, tuple, dict, str)) else 0
-            env.set(var_name, l)
+    def _eval_llen(self, stmt, env):
+        _, list_name, dest_var, line = stmt
+        lst = env.get(list_name, line)
+        if isinstance(lst, list):
+            env.set(dest_var, len(lst))
+        elif isinstance(lst, str):
+            env.set(dest_var, len(lst))
+        elif isinstance(lst, dict):
+            env.set(dest_var, len(lst))
+        else:
+            env.set(dest_var, 0)
 
-        elif kind == "LPUSH":
-            _, list_name, val_expr, line = stmt
-            lst = env.get(list_name, line)
-            val = self.eval_expr(val_expr, env)
-            if isinstance(lst, list):
-                lst.append(val)
+    def _eval_lpush(self, stmt, env):
+        _, list_name, val_expr, line = stmt
+        lst = env.get(list_name, line)
+        if isinstance(lst, list):
+            v = self.eval_expr(val_expr, env)
+            lst.append(v)
+        else:
+            raise TrappyError(f"'{list_name}' is not a list!", line)
 
-        elif kind == "LPOP":
-            _, list_name, var_name, line = stmt
-            lst = env.get(list_name, line)
-            val = lst.pop() if isinstance(lst, list) and lst else None
-            env.set(var_name, val)
+    def _eval_lpop(self, stmt, env):
+        _, list_name, dest_var, line = stmt
+        lst = env.get(list_name, line)
+        if isinstance(lst, list) and len(lst) > 0:
+            env.set(dest_var, lst.pop())
+        else:
+            env.set(dest_var, 0)
 
-        elif kind == "FILE_WRITE":
-            _, path_expr, data_expr, line = stmt
-            target_path = sanitize_path(str(self.eval_expr(path_expr, env)))
-            data = self.eval_expr(data_expr, env)
-            with open(target_path, "w", encoding="utf-8") as f:
-                f.write(str(data))
+    def _eval_file_write(self, stmt, env):
+        _, file_expr, content_expr, line = stmt
+        fname = str(self.eval_expr(file_expr, env))
+        content = str(self.eval_expr(content_expr, env))
+        safe_name = sanitize_path(fname)
+        with open(safe_name, "w", encoding="utf-8") as f:
+            f.write(content)
 
-        elif kind == "FILE_READ":
-            _, path_expr, var_name, line = stmt
-            target_path = sanitize_path(str(self.eval_expr(path_expr, env)))
-            content = ""
-            if os.path.exists(target_path):
-                with open(target_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-            env.set(var_name, content)
+    def _eval_file_read(self, stmt, env):
+        _, file_expr, dest_var, line = stmt
+        fname = str(self.eval_expr(file_expr, env))
+        safe_name = sanitize_path(fname)
+        if os.path.exists(safe_name):
+            with open(safe_name, "r", encoding="utf-8") as f:
+                env.set(dest_var, f.read())
+        else:
+            env.set(dest_var, "")
 
-        elif kind == "FILE_APPEND":
-            _, path_expr, data_expr, line = stmt
-            target_path = sanitize_path(str(self.eval_expr(path_expr, env)))
-            data = self.eval_expr(data_expr, env)
-            with open(target_path, "a", encoding="utf-8") as f:
-                f.write(str(data))
+    def _eval_file_append(self, stmt, env):
+        _, file_expr, content_expr, line = stmt
+        fname = str(self.eval_expr(file_expr, env))
+        content = str(self.eval_expr(content_expr, env))
+        safe_name = sanitize_path(fname)
+        with open(safe_name, "a", encoding="utf-8") as f:
+            f.write(content)
 
-        elif kind == "FILE_EXISTS":
-            _, path_expr, var_name, line = stmt
-            target_path = sanitize_path(str(self.eval_expr(path_expr, env)))
-            env.set(var_name, 1 if os.path.exists(target_path) else 0)
+    def _eval_file_exists(self, stmt, env):
+        _, file_expr, dest_var, line = stmt
+        fname = str(self.eval_expr(file_expr, env))
+        safe_name = sanitize_path(fname)
+        env.set(dest_var, 1 if os.path.exists(safe_name) else 0)
 
-        elif kind == "FILE_DELETE":
-            _, path_expr, line = stmt
-            target_path = sanitize_path(str(self.eval_expr(path_expr, env)))
-            if os.path.exists(target_path):
-                os.remove(target_path)
+    def _eval_file_delete(self, stmt, env):
+        _, file_expr, line = stmt
+        fname = str(self.eval_expr(file_expr, env))
+        safe_name = sanitize_path(fname)
+        if os.path.exists(safe_name):
+            try:
+                os.remove(safe_name)
+            except Exception:
+                pass
 
-        elif kind == "DIR_LIST":
-            _, path_expr, var_name, line = stmt
-            target_path = sanitize_path(str(self.eval_expr(path_expr, env)))
-            files = os.listdir(target_path) if os.path.isdir(target_path) else []
-            env.set(var_name, files)
+    def _eval_dir_list(self, stmt, env):
+        _, path_expr, dest_var, line = stmt
+        path_str = str(self.eval_expr(path_expr, env))
+        safe_path = sanitize_path(path_str)
+        if os.path.isdir(safe_path):
+            env.set(dest_var, os.listdir(safe_path))
+        else:
+            env.set(dest_var, [])
 
-        elif kind == "BOX_HIT":
-            _, x1_raw, y1_raw, w1_raw, h1_raw, x2_raw, y2_raw, w2_raw, h2_raw, var_name, line = stmt
-            x1 = self.eval_coord(x1_raw, env)
-            y1 = self.eval_coord(y1_raw, env)
-            w1 = self.eval_coord(w1_raw, env)
-            h1 = self.eval_coord(h1_raw, env)
-            x2 = self.eval_coord(x2_raw, env)
-            y2 = self.eval_coord(y2_raw, env)
-            w2 = self.eval_coord(w2_raw, env)
-            h2 = self.eval_coord(h2_raw, env)
-            hit = 1 if (x1 < x2 + w2 and x1 + w1 > x2 and y1 < y2 + h2 and y1 + h1 > y2) else 0
-            env.set(var_name, hit)
+    def _eval_box_hit(self, stmt, env):
+        _, x1_e, y1_e, w1_e, h1_e, x2_e, y2_e, w2_e, h2_e, dest_var, line = stmt
+        x1 = self.eval_coord(x1_e, env)
+        y1 = self.eval_coord(y1_e, env)
+        w1 = self.eval_coord(w1_e, env)
+        h1 = self.eval_coord(h1_e, env)
+        x2 = self.eval_coord(x2_e, env)
+        y2 = self.eval_coord(y2_e, env)
+        w2 = self.eval_coord(w2_e, env)
+        h2 = self.eval_coord(h2_e, env)
+        hit = (x1 < x2 + w2 and x1 + w1 > x2 and y1 < y2 + h2 and y1 + h1 > y2)
+        env.set(dest_var, 1 if hit else 0)
 
-        elif kind == "VEC_ADD":
-            _, x1_raw, y1_raw, x2_raw, y2_raw, var_name, line = stmt
-            x1 = self.eval_coord(x1_raw, env)
-            y1 = self.eval_coord(y1_raw, env)
-            x2 = self.eval_coord(x2_raw, env)
-            y2 = self.eval_coord(y2_raw, env)
-            env.set(var_name, [x1 + x2, y1 + y2])
+    def _eval_vec_add(self, stmt, env):
+        _, x1_e, y1_e, x2_e, y2_e, var_name, _ = stmt
+        x1 = self.eval_coord(x1_e, env)
+        y1 = self.eval_coord(y1_e, env)
+        x2 = self.eval_coord(x2_e, env)
+        y2 = self.eval_coord(y2_e, env)
+        env.set(var_name, [x1 + x2, y1 + y2])
 
-        elif kind == "VEC_MAG":
-            _, x_raw, y_raw, var_name, line = stmt
-            x = self.eval_coord(x_raw, env)
-            y = self.eval_coord(y_raw, env)
-            env.set(var_name, math.hypot(x, y))
+    def _eval_vec_mag(self, stmt, env):
+        _, x_e, y_e, dest_var, _ = stmt
+        x = self.eval_coord(x_e, env)
+        y = self.eval_coord(y_e, env)
+        mag = math.sqrt(x*x + y*y)
+        env.set(dest_var, mag)
 
-        elif kind == "IF_STMT":
-            _, condition, then_body, else_body, _ = stmt
-            _, op, left_expr, right_expr = condition
-            left = self.eval_expr(left_expr, env)
-            right = self.eval_expr(right_expr, env)
+    def _eval_each_loop(self, stmt, env):
+        _, item_var, list_var, body, line = stmt
+        lst = env.get(list_var, line)
+        if isinstance(lst, list):
+            for item in lst:
+                env.set(item_var, item)
+                try:
+                    for s in body:
+                        self.eval_stmt(s, env)
+                except BreakSignal as b:
+                    if b.loop_type in ("sloop", "srep"):
+                        break
+                    raise b
+        else:
+            raise TrappyError(f"'{list_var}' is not a list to loop over!", line)
 
-            if left is None and isinstance(right, (int, float)):
-                left = 0
-            if right is None and isinstance(left, (int, float)):
-                right = 0
+    def _eval_if_stmt(self, stmt, env):
+        _, condition, then_body, else_body, _ = stmt
+        _, op, left_expr, right_expr = condition
+        left = self.eval_expr(left_expr, env)
+        right = self.eval_expr(right_expr, env)
 
-            is_true = False
-            if op == "grt": is_true = (left > right)
-            elif op == "lss": is_true = (left < right)
-            elif op == "sm": is_true = (left == right)
+        if left is None and isinstance(right, (int, float)):
+            left = 0
+        if right is None and isinstance(left, (int, float)):
+            right = 0
 
-            if is_true:
-                for s in then_body:
+        is_true = False
+        op_clean = op.lower() if isinstance(op, str) else op
+
+        if op_clean in ("grt", ">"):
+            is_true = (left > right)
+        elif op_clean in ("lss", "<"):
+            is_true = (left < right)
+        elif op_clean in ("sm", "eq", "=="):
+            is_true = (left == right)
+        elif op_clean in ("!=", "ne"):
+            is_true = (left != right)
+        elif op_clean in (">=", "gte"):
+            is_true = (left >= right)
+        elif op_clean in ("<=", "lte"):
+            is_true = (left <= right)
+
+        if is_true:
+            for s in then_body:
+                self.eval_stmt(s, env)
+        elif else_body:
+            for s in else_body:
+                self.eval_stmt(s, env)
+
+    def _eval_key_check(self, stmt, env):
+        _, key_name, is_flkey, body, _ = stmt
+        if self.gui:
+            is_active = (key_name.upper() in self.gui.pressed_keys)
+            if is_active:
+                for s in body:
                     self.eval_stmt(s, env)
-            elif else_body:
-                for s in else_body:
-                    self.eval_stmt(s, env)
 
-        elif kind == "REP_LOOP":
-            _, count_expr, body, _ = stmt
-            count = "inf" if count_expr == "inf" else self.eval_expr(count_expr, env)
-            i = 0
-            while True:
-                if count != "inf" and i >= count:
+    def _eval_rep_loop(self, stmt, env):
+        _, count_expr, body, _ = stmt
+        count = "inf" if count_expr == "inf" else self.eval_expr(count_expr, env)
+        i = 0
+        while True:
+            if count != "inf" and i >= count:
+                break
+            try:
+                for s in body:
+                    self.eval_stmt(s, env)
+            except BreakSignal as b:
+                if b.loop_type == "srep":
                     break
-                try:
-                    for s in body:
-                        self.eval_stmt(s, env)
-                except BreakSignal as b:
-                    if b.loop_type == "srep":
-                        break
-                    raise b
-                i += 1
+                raise b
+            i += 1
 
-        elif kind == "INFINITE_LOOP":
-            _, body, _ = stmt
-            while True:
-                try:
-                    for s in body:
-                        self.eval_stmt(s, env)
-                except BreakSignal as b:
-                    if b.loop_type == "sloop":
-                        break
-                    raise b
+    def _eval_infinite_loop(self, stmt, env):
+        _, body, _ = stmt
+        while True:
+            try:
+                for s in body:
+                    self.eval_stmt(s, env)
+            except BreakSignal as b:
+                if b.loop_type in ("sloop", "srep"):
+                    break
+                raise b
 
-        elif kind == "BREAK_REP":
-            raise BreakSignal("srep")
+    def _eval_break_rep(self, stmt, env):
+        raise BreakSignal("srep")
 
-        elif kind == "BREAK_LOOP":
-            raise BreakSignal("sloop")
+    def _eval_break_loop(self, stmt, env):
+        raise BreakSignal("sloop")
 
-        elif kind == "RETURN":
-            _, expr, _ = stmt
-            val = self.eval_expr(expr, env)
-            raise ReturnSignal(val)
+    def _eval_pack_data(self, stmt, env):
+        _, obj_name, var_name, line = stmt
+        obj = env.get(obj_name, line)
+        if isinstance(obj, dict):
+            packet_str = json.dumps(obj)
+            env.set(var_name, packet_str)
+        else:
+            raise TrappyError(f"'{obj_name}' is not an object/dict to pack!", line)
+
+    def _eval_unpack_data(self, stmt, env):
+        _, packet_expr, obj_name, line = stmt
+        packet_val = self.eval_expr(packet_expr, env)
+        try:
+            parsed = json.loads(str(packet_val))
+            if isinstance(parsed, dict):
+                env.set(obj_name, parsed)
+            else:
+                env.set(obj_name, {"data": parsed})
+        except Exception as e:
+            raise TrappyError(f"Failed to unpack packet: {e}", line)
 
     def trigger_action(self, fn_name):
         if fn_name in self.functions:
-            fn_type, params, body = self.functions[fn_name]
-            local_env = Environment(parent=self.global_env)
-            for s in body:
-                self.eval_stmt(s, local_env)
+            self.call_function(fn_name, [], self.global_env, 0)
+        else:
+            print(f"[Trappy Alert]: No function named '{fn_name}' found to trigger!")
 
     def eval_coord(self, raw, env):
         if isinstance(raw, (int, float)):
             return raw
-        if isinstance(raw, str):
-            return env.get(raw)
-        if isinstance(raw, (tuple, list)):
+        if isinstance(raw, tuple):
             if raw[0] == "NUM":
                 return raw[1]
             if raw[0] == "VAR":
-                return env.get(raw[1], raw[2] if len(raw) > 2 else None)
+                val = env.get(raw[1], raw[2])
+                return float(val) if isinstance(val, (int, float)) else 0.0
             if raw[0] == "DOT":
-                return env.get_dot(raw[1], raw[2], raw[3] if len(raw) > 3 else None)
+                val = env.get_dot(raw[1], raw[2], raw[3])
+                return float(val) if isinstance(val, (int, float)) else 0.0
             if raw[0] == "RND":
-                low = int(self.eval_coord(raw[1], env))
-                high = int(self.eval_coord(raw[2], env))
-                return random.randint(low, high)
-        return 0
+                low = self.eval_coord(raw[1], env)
+                high = self.eval_coord(raw[2], env)
+                return random.randint(int(low), int(high))
+            if raw[0] == "BINOP":
+                return self.eval_expr(raw, env)
+        return float(raw) if isinstance(raw, (int, float)) else 0.0
 
     def eval_expr(self, expr, env):
-        kind = expr[0]
+        if isinstance(expr, (int, float, str)):
+            return expr
 
+        kind = expr[0]
         if kind == "NUM":
             return expr[1]
-
         if kind == "STR":
             return expr[1]
-
-        if kind == "RND":
-            low = int(self.eval_expr(expr[1], env))
-            high = int(self.eval_expr(expr[2], env))
-            return random.randint(low, high)
-
         if kind == "VAR":
             return env.get(expr[1], expr[2])
-
         if kind == "DOT":
-            _, obj_name, prop_name, line = expr
-            return env.get_dot(obj_name, prop_name, line)
+            return env.get_dot(expr[1], expr[2], expr[3])
+
+        if kind == "RND":
+            low = self.eval_expr(expr[1], env)
+            high = self.eval_expr(expr[2], env)
+            return random.randint(int(low), int(high))
+
+        if kind == "MATH_UNARY":
+            _, op, arg_expr, line = expr
+            val = self.eval_expr(arg_expr, env)
+            if op == "sqrt":
+                return math.sqrt(val)
+            elif op == "abs":
+                return abs(val)
+            elif op == "sin":
+                return math.sin(math.radians(val))
+            elif op == "cos":
+                return math.cos(math.radians(val))
+            raise TrappyError(f"Unknown math operation '{op}'", line)
+
+        if kind == "MATH_BINARY":
+            _, op, a_expr, b_expr, line = expr
+            a = self.eval_expr(a_expr, env)
+            b = self.eval_expr(b_expr, env)
+            if op == "pow":
+                return math.pow(a, b)
+            raise TrappyError(f"Unknown binary math operation '{op}'", line)
+
+        if kind == "MATH_DIST":
+            _, x1_e, y1_e, x2_e, y2_e, _ = expr
+            x1 = self.eval_expr(x1_e, env)
+            y1 = self.eval_expr(y1_e, env)
+            x2 = self.eval_expr(x2_e, env)
+            y2 = self.eval_expr(y2_e, env)
+            return math.hypot(x2 - x1, y2 - y1)
+
+        if kind == "MATH_CLAMP":
+            _, v_e, min_e, max_e, _ = expr
+            v = self.eval_expr(v_e, env)
+            mi = self.eval_expr(min_e, env)
+            ma = self.eval_expr(max_e, env)
+            return max(mi, min(v, ma))
 
         if kind == "BINOP":
-            op = expr[1]
-            left = self.eval_expr(expr[2], env)
-            right = self.eval_expr(expr[3], env)
-            if op == "+": 
+            _, op, left_expr, right_expr = expr
+            left = self.eval_expr(left_expr, env)
+            right = self.eval_expr(right_expr, env)
+
+            if op == "+":
                 if isinstance(left, str) or isinstance(right, str):
                     return str(left) + str(right)
                 return left + right
-            if op == "-": return left - right
-            if op == "multi": return left * right
-            if op == "div": return left // right
-            if op == "band": return int(left) & int(right)
-            if op == "bor": return int(left) | int(right)
-            if op == "bxor": return int(left) ^ int(right)
-            if op == "bshl": return int(left) << int(right)
-            if op == "bshr": return int(left) >> int(right)
-
-        if kind == "MATH_UNARY":
-            _, op, arg, line = expr
-            val = float(self.eval_expr(arg, env))
-            if op == "sqrt":
-                return math.sqrt(max(0.0, val))
-            if op == "abs":
-                return abs(val)
-            if op == "sin":
-                return math.sin(math.radians(val))
-            if op == "cos":
-                return math.cos(math.radians(val))
-
-        if kind == "MATH_BINARY":
-            _, op, a, b, line = expr
-            val_a = float(self.eval_expr(a, env))
-            val_b = float(self.eval_expr(b, env))
-            if op == "pow":
-                return math.pow(val_a, val_b)
-
-        if kind == "MATH_DIST":
-            _, x1, y1, x2, y2, line = expr
-            v_x1 = float(self.eval_expr(x1, env))
-            v_y1 = float(self.eval_expr(y1, env))
-            v_x2 = float(self.eval_expr(x2, env))
-            v_y2 = float(self.eval_expr(y2, env))
-            return math.hypot(v_x1 - v_x2, v_y1 - v_y2)
-
-        if kind == "MATH_CLAMP":
-            _, v, min_v, max_v, line = expr
-            val = float(self.eval_expr(v, env))
-            low = float(self.eval_expr(min_v, env))
-            high = float(self.eval_expr(max_v, env))
-            return max(low, min(high, val))
+            elif op == "-":
+                return left - right
+            elif op == "multi":
+                return left * right
+            elif op == "div":
+                if right == 0:
+                    raise TrappyError("Division by zero", 0)
+                return left / right
+            elif op == "BAND":
+                return int(left) & int(right)
+            elif op == "BOR":
+                return int(left) | int(right)
+            elif op == "BXOR":
+                return int(left) ^ int(right)
+            elif op == "BSHL":
+                return int(left) << int(right)
+            elif op == "BSHR":
+                return int(left) >> int(right)
 
         if kind == "CALL":
-            _, fn_name, args, line = expr
+            _, name, args, line = expr
+            return self.call_function(name, args, env, line)
 
-            self.call_depth += 1
-            if self.call_depth > self.MAX_CALL_DEPTH:
-                self.call_depth = 0
-                raise TrappySecurityError(
-                    f"Infinite recursion bomb detected! Exceeded max stack depth ({self.MAX_CALL_DEPTH})", line
-                )
+        return 0
 
-            evaluated_args = [self.eval_expr(a, env) for a in args]
+    def call_function(self, fn_name, args, env, line):
+        self.call_depth += 1
+        if self.call_depth > self.MAX_CALL_DEPTH:
+            self.call_depth = 0
+            raise TrappySecurityError(
+                f"Recursion bomb blocked: exceeded maximum stack ceiling ({self.MAX_CALL_DEPTH})!",
+                line
+            )
 
-            if fn_name not in self.functions:
-                self.call_depth -= 1
-                raise TrappyError(f"Undefined Trappy function '{fn_name}'", line)
-
-            fn_type, params, body = self.functions[fn_name]
-            if len(params) != len(evaluated_args):
-                self.call_depth -= 1
-                raise TrappyError(
-                    f"Function '{fn_name}' expects {len(params)} arguments, got {len(evaluated_args)}", line
-                )
-
-            local_env = Environment(parent=self.global_env)
-            for p, a in zip(params, evaluated_args):
-                local_env.set(p, a)
-
-            try:
-                for s in body:
-                    self.eval_stmt(s, local_env)
-            except ReturnSignal as ret:
-                self.call_depth -= 1
-                return ret.value
-
+        if fn_name not in self.functions:
             self.call_depth -= 1
-            return None
+            raise TrappyError(f"Undefined Trappy function '{fn_name}'", line)
+
+        params, body = self.functions[fn_name]
+        if len(args) != len(params):
+            self.call_depth -= 1
+            raise TrappyError(
+                f"Function '{fn_name}' expects {len(params)} argument(s), but got {len(args)}",
+                line
+            )
+
+        fn_env = Environment(parent=env)
+        for p_name, arg_expr in zip(params, args):
+            val = self.eval_expr(arg_expr, env)
+            fn_env.set(p_name, val)
+
+        result = 0
+        try:
+            for stmt in body:
+                self.eval_stmt(stmt, fn_env)
+        except ReturnSignal as ret:
+            result = ret.value
+        finally:
+            self.call_depth -= 1
+
+        return result
+
+def run_trappy(code):
+    tokens = tokenize(code)
+    parser = Parser(tokens)
+    ast = parser.parse_program()
+    interpreter = TrappyInterpreter()
+    interpreter.run(ast)
+    return interpreter
 
 if __name__ == "__main__":
-    args = sys.argv[1:]
-    if args and args[0].lower() in ("trpexec", "run", "exec"):
-        args = args[1:]
-
-    if args:
-        target_file = args[0]
-        try:
-            with open(target_file, "r") as f:
-                code = f.read()
-            tokens = tokenize(code)
-            parser = Parser(tokens)
-            ast = parser.parse_program()
-            interpreter = TrappyInterpreter()
-            interpreter.run(ast)
-        except TrappyError as err:
-            print(err)
-            sys.exit(1)
-        except Exception as general_err:
-            print(f"\n[TRAPPY]: A Syntax is being invalid: {general_err}")
-            sys.exit(1)
+    if len(sys.argv) > 1:
+        filepath = sys.argv[1]
+        if os.path.exists(filepath):
+            with open(filepath, "r", encoding="utf-8") as f:
+                source = f.read()
+            run_trappy(source)
+        else:
+            print(f"Error: File '{filepath}' does not exist.")
     else:
-        print("[TRAPPY]: Please specify a file to run! Example: trpexec script.trappy")
+        print(f"Trappy Language Core Runtime Engine v{__version__}")
+        print("Usage: python trappy.py <filename.trappy>")

@@ -1,4 +1,4 @@
-# Trappy Programming Language - Official Reference Manual (v1.0.0 Global Release)
+# Trappy Programming Language - Official Reference Manual (v1.1.0 Patch)
 
 Copyright (c) Trappy Language Project. All rights reserved.  
 Official File Extension: `.trappy`  
@@ -320,7 +320,8 @@ then
 tren
 ```
 
-Comparisons: `grt` (>), `lss` (<), `sm` (==).
+Comparisons: `>`, `<`, `==`, `!=`, `>=`, `<=`, `grt`, `lss`, `sm`, `eq`.
+Both `else` (standard in v1.1) and `then` (legacy) are fully supported for the alternative branch.
 
 ---
 
