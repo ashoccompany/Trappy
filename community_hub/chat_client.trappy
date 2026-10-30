@@ -1,7 +1,3 @@
-# =====================================================================
-# COMMUNITY PACKAGE: chat_client.trappy
-# Lightweight client protocol module for Trappy chat applications
-# =====================================================================
 trst
     ftxt format_message user:content
         txt "[" + user + "]: " + content tit out_msg

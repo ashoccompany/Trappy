@@ -1,13 +1,3 @@
-# =====================================================================
-# TRAPPY PROGRAMMING LANGUAGE - CORE RUNTIME ENGINE (v1.0.0 GLOBAL)
-# Official Community & Source Links:
-# Discord: https://discord.gg/WRTG3spWH (Official Community Headquarters)
-# GitHub:  https://github.com/ashoccompany/Trappy
-# X:       https://x.com/tr4ppyai
-# Universal: 3D/2D Graphics, Discord Webhooks, Offline Loopback, File I/O,
-# Packets, Dictionaries, Lists, Audio Synthesizer, OS Primitives & Math
-# =====================================================================
-
 import sys
 import os
 import time
@@ -20,7 +10,6 @@ import json
 import subprocess
 import queue
 
-# Built-in GUI and Audio
 try:
     import tkinter as tk
 except ImportError:
@@ -31,10 +20,6 @@ try:
 except ImportError:
     winsound = None
 
-
-# =====================================================================
-# VIRTUAL OFFLINE LOOPBACK BUS (BUDGET RESILIENT NETWORKING)
-# =====================================================================
 class VirtualLoopbackSocket:
     _channels = {}
 
@@ -64,10 +49,6 @@ class VirtualLoopbackSocket:
     def close(self):
         self.closed = True
 
-
-# =====================================================================
-# SECURITY & ERROR SYSTEM
-# =====================================================================
 class TrappyError(Exception):
     def __init__(self, message, line=None):
         self.message = message
@@ -81,7 +62,6 @@ class TrappyError(Exception):
             f"[TRAPPY HINT]: Press F1 in IDE for Manual or ask on Discord: https://discord.gg/WRTG3spWH"
         )
 
-
 class TrappySecurityError(TrappyError):
     def __str__(self):
         line_info = f"on Line {self.line}" if self.line else ""
@@ -90,22 +70,15 @@ class TrappySecurityError(TrappyError):
             f"[TRAPPY]: Exploit/Violation prevented: {self.message}"
         )
 
-
 def sanitize_path(filename, base_dir=None):
-    """Prevents Directory Traversal exploits (e.g. ../../Windows/System32)."""
     if base_dir is None:
         base_dir = os.getcwd()
-    # Normalize paths
     abs_base = os.path.abspath(base_dir)
     target = os.path.abspath(os.path.join(abs_base, filename))
     if not target.startswith(abs_base):
         raise TrappySecurityError(f"Path Traversal attempt blocked: '{filename}'")
     return target
 
-
-# =====================================================================
-# THE LEXER (TOKENIZER)
-# =====================================================================
 class Token:
     def __init__(self, kind, val, line):
         self.kind = kind
@@ -114,7 +87,6 @@ class Token:
 
     def __repr__(self):
         return f"Token({self.kind}, {self.val}, Line:{self.line})"
-
 
 def tokenize(code):
     tokens = []
@@ -134,13 +106,11 @@ def tokenize(code):
             i += 1
             continue
 
-        # Comments
         if c == '#':
             while i < n and code[i] != '\n':
                 i += 1
             continue
 
-        # Strings with double quotes
         if c == '"':
             start_line = line
             i += 1
@@ -152,11 +122,10 @@ def tokenize(code):
                 i += 1
             if i >= n:
                 raise TrappyError("Unclosed string quote", start_line)
-            i += 1  # Skip closing quote
+            i += 1
             tokens.append(Token("STR", str_val, start_line))
             continue
 
-        # Punctuation & Operators
         if c in "():+=|,":
             tokens.append(Token(c, c, line))
             i += 1
@@ -172,7 +141,6 @@ def tokenize(code):
             i += 1
             continue
 
-        # Hex literals (0x41, 0xFF, 0x90) and Decimal Numbers
         if c == '0' and i + 1 < n and code[i+1].lower() == 'x':
             i += 2
             hex_str = ""
@@ -190,7 +158,6 @@ def tokenize(code):
             tokens.append(Token("NUM", int(num), line))
             continue
 
-        # Words & Keywords
         if c.isalpha() or c == "_":
             word = ""
             while i < n and (code[i].isalnum() or code[i] == "_"):
@@ -201,31 +168,23 @@ def tokenize(code):
                 "trst", "tren", "fmh", "fdel", "ftxt", "flist", "frep", "floop",
                 "fgui", "fui", "fdrw", "fgfx", "fcan", "fweb", "fcli", "fapp", "f3d", "fos",
                 "mh", "eq", "rt", "answ", "out", "gan", "trg", "trged", "multi", "div",
-                # Advanced Math, Geometry & Physics Operators:
                 "sqrt", "pow", "abs", "sin", "cos", "dist", "clamp",
                 "box_hit", "vec_add", "vec_mag",
-                # Bitwise Systems Operators:
                 "band", "bor", "bxor", "bnot", "bshl", "bshr",
-                # Universal Web, Packets, Discord & Client/Server Keywords:
                 "http_get", "http_post", "download", "discord_webhook",
                 "ws_connect", "ws_send", "ws_recv", "ws_close",
                 "json_parse", "json_dump",
                 "pack", "unpack", "pack_data", "unpack_data",
                 "cli_connect", "cli_send", "cli_recv", "cli_close",
                 "srv_listen", "srv_accept",
-                # Collections & Dictionaries & Lists (v1.0.0):
                 "dict", "dset", "dget", "dkeys",
                 "lst", "lget", "lset", "llen", "lpush", "lpop",
-                # Universal File I/O Suite (v1.0.0):
                 "file_write", "file_read", "file_append", "file_exists", "file_delete", "dir_list",
                 "ifr", "then", "else", "grt", "lss", "sm", "exst", "exist",
                 "rep", "loop", "srep", "sloop", "txt", "tit", "inf", "ath",
-                # Registry keywords:
                 "add_var", "add_func", "add_obj", "add_type", "spawn", "as",
-                # GUI, 2D & 3D Engine Keywords:
                 "cwin", "swin", "sbgwin", "label", "regle", "circ", "line",
                 "cube3d", "line3d", "point3d", "sphere3d", "pyramid3d",
-                # OS & Low-Level Memory Keywords:
                 "mem_alloc", "mem_write", "mem_read", "sys_exec", "sys_env",
                 "btn", "inp", "psed", "changed", "gloop", "fps", "calm", "lock", "unlock",
                 "key", "flkey", "mousel", "mouser", "mousesp", "collde", "collide",
@@ -242,10 +201,6 @@ def tokenize(code):
     tokens.append(Token("EOF", None, line))
     return tokens
 
-
-# =====================================================================
-# THE PARSER
-# =====================================================================
 class Parser:
     def __init__(self, tokens):
         self.tokens = tokens
@@ -275,7 +230,6 @@ class Parser:
     def parse_statement(self):
         tok = self.peek()
 
-        # 1. Declaration: add_var "name" / add_var name [as "Type"]
         if tok.kind == "ADD_VAR":
             self.consume("ADD_VAR")
             var_name = self.consume_name_or_str()
@@ -286,14 +240,12 @@ class Parser:
                 type_name = self.consume_name_or_str()
             return ("ADD_VAR", var_name, type_name, tok.line)
 
-        # 2. Declaration: add_func "name"
         if tok.kind == "ADD_FUNC":
             self.consume("ADD_FUNC")
             fn_name = self.consume_name_or_str()
             self.known_functions.add(fn_name)
             return ("ADD_FUNC", fn_name, tok.line)
 
-        # 3. Declaration: add_obj "name" ... tren
         if tok.kind == "ADD_OBJ":
             self.consume("ADD_OBJ")
             obj_name = self.consume_name_or_str()
@@ -307,7 +259,6 @@ class Parser:
             self.consume("TREN")
             return ("ADD_OBJ", obj_name, fields, tok.line)
 
-        # 4. Declaration: add_type "TypeName" ... tren
         if tok.kind == "ADD_TYPE":
             self.consume("ADD_TYPE")
             type_name = self.consume_name_or_str()
@@ -321,12 +272,11 @@ class Parser:
             self.blueprints[type_name] = fields
             return ("ADD_TYPE", type_name, fields, tok.line)
 
-        # 5. Functions: fmh, ftxt, flist, frep, floop, fgui, fui, fdrw, fgfx, fcan, fweb, fcli, fapp, f3d, fos
         if tok.kind in ("FMH", "FTXT", "FLIST", "FREP", "FLOOP", "FGUI", "FUI", "FDRW", "FGFX", "FCAN", "FWEB", "FCLI", "FAPP", "F3D", "FOS"):
             fn_type = self.consume(tok.kind).val
             fn_name = self.consume("NAME").val
             self.known_functions.add(fn_name)
-            
+
             params = []
             if self.peek().kind in ("NAME", "STR"):
                 p_tok = self.peek()
@@ -344,7 +294,6 @@ class Parser:
             self.consume("TREN")
             return ("FN_DEF", fn_type, fn_name, params, body, tok.line)
 
-        # 6. Delete function: fdel <name> <target> ... tren
         if tok.kind == "FDEL":
             self.consume("FDEL")
             fn_name = self.consume("NAME").val
@@ -356,7 +305,6 @@ class Parser:
             self.consume("TREN")
             return ("FDEL_DEF", fn_name, target_param, body, tok.line)
 
-        # 7. Trigger action: trg <name> [target]
         if tok.kind == "TRG":
             self.consume("TRG")
             fn_name = self.consume("NAME").val
@@ -365,7 +313,6 @@ class Parser:
                 target = self.consume("NAME").val
             return ("TRG_ACTION", fn_name, target, tok.line)
 
-        # 8. GUI Window Creation: cwin "Title" width:height [main/bg]
         if tok.kind == "CWIN":
             self.consume("CWIN")
             title = self.consume("STR").val
@@ -377,14 +324,12 @@ class Parser:
                 mode = self.consume("NAME").val
             return ("CWIN", title, w, h, mode, tok.line)
 
-        # 9. Window Styling: swin / sbgwin
         if tok.kind in ("SWIN", "SBGWIN"):
             cmd = self.consume(tok.kind).val
             win_name = self.consume("STR").val if self.peek().kind == "STR" else self.consume("NAME").val
             color = self.consume("NAME").val
             return ("WIN_STYLE", cmd, win_name, color, tok.line)
 
-        # 10. GUI Label: label <expr> x:y color
         if tok.kind == "LABEL":
             self.consume("LABEL")
             text_expr = self.parse_expr()
@@ -394,7 +339,6 @@ class Parser:
             color = self.consume("NAME").val if self.peek().kind == "NAME" else "white"
             return ("LABEL", text_expr, x, y, color, tok.line)
 
-        # 11. GUI Rectangle: regle x:y w:h color
         if tok.kind == "REGLE":
             self.consume("REGLE")
             x = self.parse_coord_part()
@@ -406,7 +350,6 @@ class Parser:
             color = self.consume("NAME").val if self.peek().kind == "NAME" else "red"
             return ("REGLE", x, y, w, h, color, tok.line)
 
-        # 12. GUI Circle: circ x:y radius color
         if tok.kind == "CIRC":
             self.consume("CIRC")
             x = self.parse_coord_part()
@@ -416,7 +359,6 @@ class Parser:
             color = self.consume("NAME").val if self.peek().kind == "NAME" else "blue"
             return ("CIRC", x, y, r, color, tok.line)
 
-        # 13. GUI Line: line x1:y1 x2:y2 color
         if tok.kind == "LINE":
             self.consume("LINE")
             x1 = self.parse_coord_part()
@@ -428,7 +370,6 @@ class Parser:
             color = self.consume("NAME").val if self.peek().kind == "NAME" else "green"
             return ("LINE", x1, y1, x2, y2, color, tok.line)
 
-        # 13b. 3D Wireframe Cube: cube3d x:y:z size rx:ry color
         if tok.kind == "CUBE3D":
             self.consume("CUBE3D")
             x = self.parse_coord_part()
@@ -443,7 +384,6 @@ class Parser:
             color = self.consume("NAME").val if self.peek().kind == "NAME" else "cyan"
             return ("CUBE3D", x, y, z, size, rx, ry, color, tok.line)
 
-        # 13c. 3D Line: line3d x1:y1:z1 x2:y2:z2 rx:ry color
         if tok.kind == "LINE3D":
             self.consume("LINE3D")
             x1 = self.parse_coord_part()
@@ -462,7 +402,6 @@ class Parser:
             color = self.consume("NAME").val if self.peek().kind == "NAME" else "green"
             return ("LINE3D", x1, y1, z1, x2, y2, z2, rx, ry, color, tok.line)
 
-        # 13d. 3D Wireframe Sphere: sphere3d x:y:z radius rx:ry color
         if tok.kind == "SPHERE3D":
             self.consume("SPHERE3D")
             x = self.parse_coord_part()
@@ -477,7 +416,6 @@ class Parser:
             color = self.consume("NAME").val if self.peek().kind == "NAME" else "cyan"
             return ("SPHERE3D", x, y, z, radius, rx, ry, color, tok.line)
 
-        # 13e. 3D Wireframe Pyramid: pyramid3d x:y:z size rx:ry color
         if tok.kind == "PYRAMID3D":
             self.consume("PYRAMID3D")
             x = self.parse_coord_part()
@@ -492,7 +430,6 @@ class Parser:
             color = self.consume("NAME").val if self.peek().kind == "NAME" else "yellow"
             return ("PYRAMID3D", x, y, z, size, rx, ry, color, tok.line)
 
-        # 14. GUI Button: btn "Text" x:y trg action_name
         if tok.kind == "BTN":
             self.consume("BTN")
             btn_text = self.consume("STR").val
@@ -503,7 +440,6 @@ class Parser:
             action = self.consume("NAME").val
             return ("BUTTON", btn_text, x, y, action, tok.line)
 
-        # 15. GUI Input Box: inp "Placeholder" x:y tit var_name
         if tok.kind == "INP":
             self.consume("INP")
             placeholder = self.consume("STR").val
@@ -514,7 +450,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("INPUT", placeholder, x, y, var_name, tok.line)
 
-        # 16. Game Loop: gloop ... tren
         if tok.kind == "GLOOP":
             self.consume("GLOOP")
             body = []
@@ -523,7 +458,6 @@ class Parser:
             self.consume("TREN")
             return ("GLOOP", body, tok.line)
 
-        # 17. FPS settings: fps calm / fps lock <num> / fps unlock
         if tok.kind == "FPS":
             self.consume("FPS")
             mode = self.peek().val.lower()
@@ -536,7 +470,6 @@ class Parser:
                 return ("FPS_SET", "lock", target_fps, tok.line)
             raise TrappyError("FPS expects 'calm', 'lock <num>', or 'unlock'", tok.line)
 
-        # 18. Sound / Audio: play / beep
         if tok.kind == "PLAY":
             self.consume("PLAY")
             snd_file = self.consume("STR").val
@@ -549,7 +482,6 @@ class Parser:
             dur = self.parse_coord_part()
             return ("BEEP_AUDIO", freq, dur, tok.line)
 
-        # 18b. Audio Synthesizer: synth wave:freq:dur
         if tok.kind == "SYNTH":
             self.consume("SYNTH")
             wave_expr = self.parse_coord_part()
@@ -559,7 +491,6 @@ class Parser:
             dur = self.parse_coord_part()
             return ("SYNTH_AUDIO", wave_expr, freq, dur, tok.line)
 
-        # 19. Write to File: write "filename.txt" data [into folder]
         if tok.kind == "WRITE":
             self.consume("WRITE")
             filename = self.consume("STR").val
@@ -570,8 +501,6 @@ class Parser:
                 dest_dir = self.consume("NAME").val
             return ("WRITE_FILE", filename, val_expr, dest_dir, tok.line)
 
-        # 19b. Universal Web & Internet:
-        # http_get "https://..." tit var
         if tok.kind == "HTTP_GET":
             self.consume("HTTP_GET")
             url_expr = self.parse_expr()
@@ -579,7 +508,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("HTTP_GET", url_expr, var_name, tok.line)
 
-        # http_post "https://...":data tit var
         if tok.kind == "HTTP_POST":
             self.consume("HTTP_POST")
             url_expr = self.parse_expr()
@@ -589,7 +517,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("HTTP_POST", url_expr, data_expr, var_name, tok.line)
 
-        # download "https://..." into "file.ext"
         if tok.kind == "DOWNLOAD":
             self.consume("DOWNLOAD")
             url_expr = self.parse_expr()
@@ -597,8 +524,6 @@ class Parser:
             dest_file = self.consume("STR").val
             return ("DOWNLOAD_FILE", url_expr, dest_file, tok.line)
 
-        # 19c. Packets & Client/Server Networking:
-        # pack expr tit var / pack_data expr tit var
         if tok.kind in ("PACK", "PACK_DATA"):
             self.consume(tok.kind)
             data_expr = self.parse_expr()
@@ -606,7 +531,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("PACK_DATA", data_expr, var_name, tok.line)
 
-        # unpack expr tit var / unpack_data expr tit var
         if tok.kind in ("UNPACK", "UNPACK_DATA"):
             self.consume(tok.kind)
             data_expr = self.parse_expr()
@@ -614,7 +538,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("UNPACK_DATA", data_expr, var_name, tok.line)
 
-        # cli_connect host:port tit var
         if tok.kind == "CLI_CONNECT":
             self.consume("CLI_CONNECT")
             host_expr = self.parse_expr()
@@ -624,7 +547,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("CLI_CONNECT", host_expr, port_expr, var_name, tok.line)
 
-        # cli_send client:data
         if tok.kind == "CLI_SEND":
             self.consume("CLI_SEND")
             client_name = self.consume("NAME").val
@@ -632,7 +554,6 @@ class Parser:
             data_expr = self.parse_expr()
             return ("CLI_SEND", client_name, data_expr, tok.line)
 
-        # cli_recv client tit var
         if tok.kind == "CLI_RECV":
             self.consume("CLI_RECV")
             client_name = self.consume("NAME").val
@@ -640,13 +561,11 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("CLI_RECV", client_name, var_name, tok.line)
 
-        # cli_close client
         if tok.kind == "CLI_CLOSE":
             self.consume("CLI_CLOSE")
             client_name = self.consume("NAME").val
             return ("CLI_CLOSE", client_name, tok.line)
 
-        # srv_listen port tit var
         if tok.kind == "SRV_LISTEN":
             self.consume("SRV_LISTEN")
             port_expr = self.parse_expr()
@@ -654,7 +573,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("SRV_LISTEN", port_expr, var_name, tok.line)
 
-        # srv_accept server tit var
         if tok.kind == "SRV_ACCEPT":
             self.consume("SRV_ACCEPT")
             server_name = self.consume("NAME").val
@@ -662,8 +580,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("SRV_ACCEPT", server_name, var_name, tok.line)
 
-        # 19d. OS & Memory Primitives:
-        # mem_alloc size tit var
         if tok.kind == "MEM_ALLOC":
             self.consume("MEM_ALLOC")
             size_expr = self.parse_expr()
@@ -671,7 +587,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("MEM_ALLOC", size_expr, var_name, tok.line)
 
-        # mem_write ptr:offset:byte
         if tok.kind == "MEM_WRITE":
             self.consume("MEM_WRITE")
             ptr_name = self.consume("NAME").val
@@ -681,7 +596,6 @@ class Parser:
             byte_expr = self.parse_expr()
             return ("MEM_WRITE", ptr_name, offset_expr, byte_expr, tok.line)
 
-        # mem_read ptr:offset tit var
         if tok.kind == "MEM_READ":
             self.consume("MEM_READ")
             ptr_name = self.consume("NAME").val
@@ -691,7 +605,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("MEM_READ", ptr_name, offset_expr, var_name, tok.line)
 
-        # sys_exec cmd tit var
         if tok.kind == "SYS_EXEC":
             self.consume("SYS_EXEC")
             cmd_expr = self.parse_expr()
@@ -699,7 +612,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("SYS_EXEC", cmd_expr, var_name, tok.line)
 
-        # sys_env name tit var
         if tok.kind == "SYS_ENV":
             self.consume("SYS_ENV")
             name_expr = self.parse_expr()
@@ -707,8 +619,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("SYS_ENV", name_expr, var_name, tok.line)
 
-        # ----------------- V1.0.0 CONNECTIVITY & DISCORD -----------------
-        # discord_webhook url_expr:msg_expr tit var
         if tok.kind == "DISCORD_WEBHOOK":
             self.consume("DISCORD_WEBHOOK")
             url_expr = self.parse_expr()
@@ -718,7 +628,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("DISCORD_WEBHOOK", url_expr, msg_expr, var_name, tok.line)
 
-        # ws_connect url_expr tit var
         if tok.kind == "WS_CONNECT":
             self.consume("WS_CONNECT")
             url_expr = self.parse_expr()
@@ -726,7 +635,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("WS_CONNECT", url_expr, var_name, tok.line)
 
-        # ws_send sock_name:msg_expr
         if tok.kind == "WS_SEND":
             self.consume("WS_SEND")
             sock_name = self.consume("NAME").val
@@ -734,7 +642,6 @@ class Parser:
             msg_expr = self.parse_expr()
             return ("WS_SEND", sock_name, msg_expr, tok.line)
 
-        # ws_recv sock_name tit var
         if tok.kind == "WS_RECV":
             self.consume("WS_RECV")
             sock_name = self.consume("NAME").val
@@ -742,13 +649,11 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("WS_RECV", sock_name, var_name, tok.line)
 
-        # ws_close sock_name
         if tok.kind == "WS_CLOSE":
             self.consume("WS_CLOSE")
             sock_name = self.consume("NAME").val
             return ("WS_CLOSE", sock_name, tok.line)
 
-        # json_parse str_expr tit var
         if tok.kind == "JSON_PARSE":
             self.consume("JSON_PARSE")
             str_expr = self.parse_expr()
@@ -756,7 +661,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("JSON_PARSE", str_expr, var_name, tok.line)
 
-        # json_dump obj_expr tit var
         if tok.kind == "JSON_DUMP":
             self.consume("JSON_DUMP")
             obj_expr = self.parse_expr()
@@ -764,15 +668,12 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("JSON_DUMP", obj_expr, var_name, tok.line)
 
-        # ----------------- V1.0.0 DICTIONARIES & COLLECTIONS -----------------
-        # dict tit var
         if tok.kind == "DICT":
             self.consume("DICT")
             self.consume("TIT")
             var_name = self.consume("NAME").val
             return ("DICT_NEW", var_name, tok.line)
 
-        # dset dict_name:key_expr:val_expr
         if tok.kind == "DSET":
             self.consume("DSET")
             dict_name = self.consume("NAME").val
@@ -782,7 +683,6 @@ class Parser:
             val_expr = self.parse_expr()
             return ("DSET", dict_name, key_expr, val_expr, tok.line)
 
-        # dget dict_name:key_expr tit var
         if tok.kind == "DGET":
             self.consume("DGET")
             dict_name = self.consume("NAME").val
@@ -792,7 +692,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("DGET", dict_name, key_expr, var_name, tok.line)
 
-        # dkeys dict_name tit var
         if tok.kind == "DKEYS":
             self.consume("DKEYS")
             dict_name = self.consume("NAME").val
@@ -800,8 +699,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("DKEYS", dict_name, var_name, tok.line)
 
-        # ----------------- V1.0.0 LIST INDEXING & HELPERS -----------------
-        # lget list_name:idx_expr tit var
         if tok.kind == "LGET":
             self.consume("LGET")
             list_name = self.consume("NAME").val
@@ -811,7 +708,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("LGET", list_name, idx_expr, var_name, tok.line)
 
-        # lset list_name:idx_expr:val_expr
         if tok.kind == "LSET":
             self.consume("LSET")
             list_name = self.consume("NAME").val
@@ -821,7 +717,6 @@ class Parser:
             val_expr = self.parse_expr()
             return ("LSET", list_name, idx_expr, val_expr, tok.line)
 
-        # llen list_name tit var
         if tok.kind == "LLEN":
             self.consume("LLEN")
             list_name = self.consume("NAME").val
@@ -829,7 +724,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("LLEN", list_name, var_name, tok.line)
 
-        # lpush list_name:val_expr
         if tok.kind == "LPUSH":
             self.consume("LPUSH")
             list_name = self.consume("NAME").val
@@ -837,7 +731,6 @@ class Parser:
             val_expr = self.parse_expr()
             return ("LPUSH", list_name, val_expr, tok.line)
 
-        # lpop list_name tit var
         if tok.kind == "LPOP":
             self.consume("LPOP")
             list_name = self.consume("NAME").val
@@ -845,8 +738,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("LPOP", list_name, var_name, tok.line)
 
-        # ----------------- V1.0.0 UNIVERSAL FILE I/O -----------------
-        # file_write path_expr:data_expr
         if tok.kind == "FILE_WRITE":
             self.consume("FILE_WRITE")
             path_expr = self.parse_expr()
@@ -854,7 +745,6 @@ class Parser:
             data_expr = self.parse_expr()
             return ("FILE_WRITE", path_expr, data_expr, tok.line)
 
-        # file_read path_expr tit var
         if tok.kind == "FILE_READ":
             self.consume("FILE_READ")
             path_expr = self.parse_expr()
@@ -862,7 +752,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("FILE_READ", path_expr, var_name, tok.line)
 
-        # file_append path_expr:data_expr
         if tok.kind == "FILE_APPEND":
             self.consume("FILE_APPEND")
             path_expr = self.parse_expr()
@@ -870,7 +759,6 @@ class Parser:
             data_expr = self.parse_expr()
             return ("FILE_APPEND", path_expr, data_expr, tok.line)
 
-        # file_exists path_expr tit var
         if tok.kind == "FILE_EXISTS":
             self.consume("FILE_EXISTS")
             path_expr = self.parse_expr()
@@ -878,13 +766,11 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("FILE_EXISTS", path_expr, var_name, tok.line)
 
-        # file_delete path_expr
         if tok.kind == "FILE_DELETE":
             self.consume("FILE_DELETE")
             path_expr = self.parse_expr()
             return ("FILE_DELETE", path_expr, tok.line)
 
-        # dir_list path_expr tit var
         if tok.kind == "DIR_LIST":
             self.consume("DIR_LIST")
             path_expr = self.parse_expr()
@@ -892,8 +778,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("DIR_LIST", path_expr, var_name, tok.line)
 
-        # ----------------- V1.0.0 PHYSICS & VECTORS -----------------
-        # box_hit x1:y1:w1:h1 x2:y2:w2:h2 tit var
         if tok.kind == "BOX_HIT":
             self.consume("BOX_HIT")
             x1 = self.parse_coord_part()
@@ -914,7 +798,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("BOX_HIT", x1, y1, w1, h1, x2, y2, w2, h2, var_name, tok.line)
 
-        # vec_add x1:y1 x2:y2 tit var
         if tok.kind == "VEC_ADD":
             self.consume("VEC_ADD")
             x1 = self.parse_coord_part()
@@ -927,7 +810,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("VEC_ADD", x1, y1, x2, y2, var_name, tok.line)
 
-        # vec_mag x:y tit var
         if tok.kind == "VEC_MAG":
             self.consume("VEC_MAG")
             x = self.parse_coord_part()
@@ -937,7 +819,6 @@ class Parser:
             var_name = self.consume("NAME").val
             return ("VEC_MAG", x, y, var_name, tok.line)
 
-        # 20. Collection Loop: each item in collection ... tren
         if tok.kind == "EACH":
             self.consume("EACH")
             item_var = self.consume("NAME").val
@@ -949,18 +830,16 @@ class Parser:
             self.consume("TREN")
             return ("EACH_LOOP", item_var, list_var, body, tok.line)
 
-        # 21. Conditions: ifr ...
         if tok.kind == "IFR":
             self.consume("IFR")
-            
-            # Key check
+
             if self.peek().kind in ("KEY", "FLKEY"):
                 is_flkey = (self.peek().kind == "FLKEY")
                 self.consume(self.peek().kind)
                 key_name = self.consume("STR").val
                 if self.peek().kind in ("TRG", "TRGED"):
                     self.consume(self.peek().kind)
-                
+
                 if self.peek().kind == "THEN":
                     self.consume("THEN")
                     action_stmt = self.parse_statement()
@@ -972,10 +851,8 @@ class Parser:
                     self.consume("TREN")
                     return ("KEY_CHECK", key_name, is_flkey, body, tok.line)
 
-            # Left side of condition
             left = self.parse_atom()
 
-            # Comparison
             if self.peek().kind in ("GRT", "LSS", "SM"):
                 op = self.consume(self.peek().kind).val
                 right = self.parse_atom()
@@ -986,7 +863,7 @@ class Parser:
                 op = self.consume(self.peek().kind).val
 
             condition = ("COND", op, left, right)
-            
+
             then_body = []
             else_body = []
             has_else = False
@@ -1003,7 +880,6 @@ class Parser:
             self.consume("TREN")
             return ("IF_STMT", condition, then_body, else_body if has_else else None, tok.line)
 
-        # 22. Loops: rep <num|inf> ... tren
         if tok.kind == "REP":
             self.consume("REP")
             if self.peek().kind == "INF":
@@ -1018,7 +894,6 @@ class Parser:
             self.consume("TREN")
             return ("REP_LOOP", count, body, tok.line)
 
-        # 23. Infinite Loop: loop ... tren
         if tok.kind == "LOOP":
             self.consume("LOOP")
             body = []
@@ -1027,7 +902,6 @@ class Parser:
             self.consume("TREN")
             return ("INFINITE_LOOP", body, tok.line)
 
-        # 24. Stop loop: srep or sloop
         if tok.kind == "SREP":
             self.consume("SREP")
             return ("BREAK_REP", tok.line)
@@ -1036,7 +910,6 @@ class Parser:
             self.consume("SLOOP")
             return ("BREAK_LOOP", tok.line)
 
-        # 25. Text assignment: txt [eq] <str> tit <var>
         if tok.kind == "TXT":
             self.consume("TXT")
             if self.peek().kind == "EQ":
@@ -1046,7 +919,6 @@ class Parser:
             target = self.parse_target_lvalue()
             return ("ASSIGN_TARGET", target, val_expr, tok.line)
 
-        # 26. List creation: lst item | item | item eq <var>
         if tok.kind == "LST":
             self.consume("LST")
             items = [self.parse_expr()]
@@ -1057,7 +929,6 @@ class Parser:
             target = self.parse_target_lvalue()
             return ("ASSIGN_LIST", target, items, tok.line)
 
-        # 27. Math assignment: mh <expr> eq <name/target>
         if tok.kind == "MH":
             self.consume("MH")
             expr = self.parse_expr()
@@ -1065,12 +936,10 @@ class Parser:
             target = self.parse_target_lvalue()
             return ("ASSIGN_TARGET", target, expr, tok.line)
 
-        # 28. Return answer: answ <expr> or rt <expr>
         if tok.kind in ("ANSW", "RT"):
             self.consume(tok.kind)
             return ("RETURN", self.parse_expr(), tok.line)
 
-        # 29. Output: gan <expr> (Give Answer) or out <expr>
         if tok.kind in ("GAN", "OUT"):
             self.consume(tok.kind)
             return ("OUT", self.parse_expr(), tok.line)
@@ -1085,7 +954,6 @@ class Parser:
         raise TrappyError(f"Expected name or string, got '{tok.val}'", tok.line)
 
     def parse_target_lvalue(self):
-        """Parses variable target or dot-property target (e.g. 'player' or 'player.x')."""
         name = self.consume("NAME").val
         if self.peek().kind == ".":
             self.consume(".")
@@ -1202,13 +1070,11 @@ class Parser:
 
         if tok.kind == "NAME":
             name = self.consume("NAME").val
-            # Dot notation check: player.x
             if self.peek().kind == ".":
                 self.consume(".")
                 prop = self.consume("NAME").val
                 return ("DOT", name, prop, tok.line)
 
-            # Function call check
             if name in self.known_functions and self.peek().kind in ("NUM", "STR", "NAME", "("):
                 args = [self.parse_atom()]
                 while self.peek().kind == ":":
@@ -1287,10 +1153,6 @@ class Parser:
             return node
         raise TrappyError(f"Expected argument, got '{tok.val}'", tok.line)
 
-
-# =====================================================================
-# THE RUNTIME ENVIRONMENT & INTERPRETER
-# =====================================================================
 class Environment:
     def __init__(self, parent=None):
         self.vars = {}
@@ -1333,16 +1195,13 @@ class Environment:
             return self.parent.delete(name)
         return False
 
-
 class ReturnSignal(Exception):
     def __init__(self, value):
         self.value = value
 
-
 class BreakSignal(Exception):
     def __init__(self, loop_type):
         self.loop_type = loop_type
-
 
 class TrappyGUI:
     def __init__(self, title, width, height, mode="main"):
@@ -1374,7 +1233,6 @@ class TrappyGUI:
         if event.char:
             self.pressed_keys.discard(event.char.upper())
 
-
 class TrappyInterpreter:
     def __init__(self):
         self.global_env = Environment()
@@ -1387,14 +1245,13 @@ class TrappyInterpreter:
         self.target_fps = 60
         self.game_loop_body = None
         self.call_depth = 0
-        self.MAX_CALL_DEPTH = 100  # Safe ceiling to prevent Python stack overflow
+        self.MAX_CALL_DEPTH = 100
 
     def run(self, ast):
         if ast[0] == "PROGRAM":
             for stmt in ast[1]:
                 self.eval_stmt(stmt, self.global_env)
 
-            # Start GUI loop if window opened
             if self.gui and self.gui.root:
                 if self.game_loop_body:
                     self._schedule_game_frame()
@@ -1413,7 +1270,7 @@ class TrappyInterpreter:
         elapsed = time.time() - start_time
 
         if not getattr(self.gui, 'is_focused', True) and self.fps_mode == "calm":
-            delay = 66  # Budget hardware saver: 15 FPS when minimized or unfocused
+            delay = 66
         elif self.fps_mode == "calm":
             delay = max(1, int((0.016 - elapsed) * 1000))
         elif self.fps_mode == "lock":
@@ -1427,12 +1284,10 @@ class TrappyInterpreter:
     def eval_stmt(self, stmt, env):
         kind = stmt[0]
 
-        # Registry statements
         if kind == "ADD_VAR":
             _, var_name, type_name, _ = stmt
             env.declare(var_name)
             if type_name and type_name in self.blueprints:
-                # Instantiate from blueprint!
                 instance = {}
                 for k, v_expr in self.blueprints[type_name].items():
                     instance[k] = self.eval_expr(v_expr, env)
@@ -1442,7 +1297,7 @@ class TrappyInterpreter:
 
         elif kind == "ADD_FUNC":
             _, fn_name, _ = stmt
-            pass  # Registered in parser
+            pass
 
         elif kind == "ADD_OBJ":
             _, obj_name, raw_fields, _ = stmt
@@ -1515,7 +1370,6 @@ class TrappyInterpreter:
             else:
                 raise TrappyError(f"No function named '{fn_name}' found to trigger!", line)
 
-        # ----------------- GUI & VISUALS -----------------
         elif kind == "CWIN":
             _, title, w, h, mode, _ = stmt
             self.gui = TrappyGUI(title, w, h, mode)
@@ -1574,10 +1428,8 @@ class TrappyInterpreter:
                 def proj(vx, vy, vz):
                     rad_y = math.radians(ry)
                     rad_x = math.radians(rx)
-                    # Y-rotation
                     x1 = vx * math.cos(rad_y) + vz * math.sin(rad_y)
                     z1 = -vx * math.sin(rad_y) + vz * math.cos(rad_y)
-                    # X-rotation
                     y2 = vy * math.cos(rad_x) - z1 * math.sin(rad_x)
                     z2 = vy * math.sin(rad_x) + z1 * math.cos(rad_x) + cz
                     fov = 350.0
@@ -1755,7 +1607,6 @@ class TrappyInterpreter:
                 f.write(str(val))
             print(f"[Trappy IO]: Saved data to '{target_file}'")
 
-        # ----------------- UNIVERSAL WEB & INTERNET -----------------
         elif kind == "HTTP_GET":
             _, url_expr, var_name, line = stmt
             url = str(self.eval_expr(url_expr, env))
@@ -1807,7 +1658,6 @@ class TrappyInterpreter:
             except Exception as e:
                 raise TrappyError(f"Download failed: {e}", line)
 
-        # ----------------- PACKETS & CLIENT-SERVER NETWORKING -----------------
         elif kind == "PACK_DATA":
             _, data_expr, var_name, line = stmt
             data_val = self.eval_expr(data_expr, env)
@@ -1841,11 +1691,10 @@ class TrappyInterpreter:
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     s.settimeout(1.0)
                     s.connect((host, port))
-                    s.settimeout(0.05) # Calm non-blocking read for game loops
+                    s.settimeout(0.05)
                     env.set(var_name, s)
                     print(f"[Trappy Client]: Connected to {host}:{port}")
                 except Exception as e:
-                    # Budget resilience: if offline, fallback to virtual loopback channel
                     sock = VirtualLoopbackSocket(channel_id=f"port_{port}")
                     env.set(var_name, sock)
                     print(f"[Trappy Client]: Offline fallback active -> loopback channel {port}")
@@ -1898,7 +1747,7 @@ class TrappyInterpreter:
                 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 srv.bind(("0.0.0.0", port))
                 srv.listen(5)
-                srv.settimeout(0.05) # Calm non-blocking
+                srv.settimeout(0.05)
                 env.set(var_name, srv)
                 print(f"[Trappy Server]: Listening on port {port}")
             except Exception as e:
@@ -1920,7 +1769,6 @@ class TrappyInterpreter:
             else:
                 env.set(var_name, None)
 
-        # ----------------- OS & LOW-LEVEL MEMORY PRIMITIVES -----------------
         elif kind == "MEM_ALLOC":
             _, size_expr, var_name, line = stmt
             size = int(self.eval_expr(size_expr, env))
@@ -1963,7 +1811,6 @@ class TrappyInterpreter:
             k = str(self.eval_expr(name_expr, env))
             env.set(var_name, os.environ.get(k, ""))
 
-        # ----------------- V1.0.0 CONNECTIVITY & DISCORD -----------------
         elif kind == "DISCORD_WEBHOOK":
             _, url_expr, msg_expr, var_name, line = stmt
             url = str(self.eval_expr(url_expr, env))
@@ -2035,7 +1882,6 @@ class TrappyInterpreter:
             except Exception:
                 env.set(var_name, str(obj))
 
-        # ----------------- V1.0.0 DICTIONARIES & COLLECTIONS -----------------
         elif kind == "DICT_NEW":
             _, var_name, line = stmt
             env.declare(var_name)
@@ -2062,7 +1908,6 @@ class TrappyInterpreter:
             keys = list(d.keys()) if isinstance(d, dict) else []
             env.set(var_name, keys)
 
-        # ----------------- V1.0.0 LIST INDEXING & HELPERS -----------------
         elif kind == "LGET":
             _, list_name, idx_expr, var_name, line = stmt
             lst = env.get(list_name, line)
@@ -2099,7 +1944,6 @@ class TrappyInterpreter:
             val = lst.pop() if isinstance(lst, list) and lst else None
             env.set(var_name, val)
 
-        # ----------------- V1.0.0 UNIVERSAL FILE I/O -----------------
         elif kind == "FILE_WRITE":
             _, path_expr, data_expr, line = stmt
             target_path = sanitize_path(str(self.eval_expr(path_expr, env)))
@@ -2140,7 +1984,6 @@ class TrappyInterpreter:
             files = os.listdir(target_path) if os.path.isdir(target_path) else []
             env.set(var_name, files)
 
-        # ----------------- V1.0.0 PHYSICS & VECTORS -----------------
         elif kind == "BOX_HIT":
             _, x1_raw, y1_raw, w1_raw, h1_raw, x2_raw, y2_raw, w2_raw, h2_raw, var_name, line = stmt
             x1 = self.eval_coord(x1_raw, env)
@@ -2168,14 +2011,12 @@ class TrappyInterpreter:
             y = self.eval_coord(y_raw, env)
             env.set(var_name, math.hypot(x, y))
 
-        # ----------------- LOGIC & CONTROL -----------------
         elif kind == "IF_STMT":
             _, condition, then_body, else_body, _ = stmt
             _, op, left_expr, right_expr = condition
             left = self.eval_expr(left_expr, env)
             right = self.eval_expr(right_expr, env)
 
-            # Optimization / Bug Fix: Treat None (such as failed socket) as 0 in numeric comparisons
             if left is None and isinstance(right, (int, float)):
                 left = 0
             if right is None and isinstance(left, (int, float)):
@@ -2288,7 +2129,6 @@ class TrappyInterpreter:
             if op == "-": return left - right
             if op == "multi": return left * right
             if op == "div": return left // right
-            # Bitwise Operators
             if op == "band": return int(left) & int(right)
             if op == "bor": return int(left) | int(right)
             if op == "bxor": return int(left) ^ int(right)
@@ -2331,8 +2171,7 @@ class TrappyInterpreter:
 
         if kind == "CALL":
             _, fn_name, args, line = expr
-            
-            # Anti-recursion bomb check: Check BEFORE evaluating arguments!
+
             self.call_depth += 1
             if self.call_depth > self.MAX_CALL_DEPTH:
                 self.call_depth = 0
@@ -2363,14 +2202,10 @@ class TrappyInterpreter:
             except ReturnSignal as ret:
                 self.call_depth -= 1
                 return ret.value
-            
+
             self.call_depth -= 1
             return None
 
-
-# =====================================================================
-# CLI RUNNER ENTRYPOINT
-# =====================================================================
 if __name__ == "__main__":
     args = sys.argv[1:]
     if args and args[0].lower() in ("trpexec", "run", "exec"):

@@ -1,12 +1,3 @@
-# =====================================================================
-# TPM - TRAPPY PACKAGE MANAGER & COMMUNITY HUB (v1.0.0 GLOBAL)
-# Official Community & Source Links:
-# Discord: https://discord.gg/WRTG3spWH (Official Community Headquarters)
-# GitHub:  https://github.com/ashoccompany/Trappy
-# X:       https://x.com/tr4ppyai
-# Official package management and code sharing ecosystem for Trappy
-# =====================================================================
-
 import sys
 import os
 import json
@@ -97,7 +88,6 @@ def search_hub(keyword=""):
 
 def install_package(pkg_name_or_url):
     ensure_dirs()
-    # Check if URL
     if pkg_name_or_url.startswith("http://") or pkg_name_or_url.startswith("https://"):
         target_name = pkg_name_or_url.split("/")[-1]
         if not target_name.endswith(".trappy"):
@@ -115,7 +105,6 @@ def install_package(pkg_name_or_url):
             print(f"Failed to download package: {e}")
         return
 
-    # Look up in Community Hub
     index = load_index()
     pkgs = index.get("packages", {})
     clean_name = pkg_name_or_url.replace(".trappy", "")

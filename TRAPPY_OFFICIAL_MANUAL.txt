@@ -130,11 +130,11 @@ Fast hash-map key-value stores for game stats and app state:
 6. LISTS & ARRAY INDEXING
 ================================================================================
     lst 10 | 20 | 30 eq scores
-    lget scores:0 tit first_score       # 10
-    lset scores:1:99                   # Updates 20 -> 99
-    lpush scores:50                    # Appends 50 to list
-    llen scores tit count              # Returns 4
-    lpop scores tit last_val           # Removes and returns 50
+    lget scores:0 tit first_score
+    lset scores:1:99
+    lpush scores:50
+    llen scores tit count
+    lpop scores tit last_val
 
 ================================================================================
 7. UNIVERSAL OFFLINE FILE I/O
@@ -197,19 +197,17 @@ Commands:
 Equations start with `mh` and store results with `eq`:
 
     mh 10 + 5 eq total
-    mh sqrt 144 eq root             # 12.0
-    mh pow 2:8 eq power             # 256.0
-    mh abs -42 eq absolute          # 42.0
-    mh clamp val:0:100 eq bounded   # Clamps between 0 and 100
-    mh sin 30 eq s                  # 0.5
-    mh cos 60 eq c                  # 0.5
+    mh sqrt 144 eq root
+    mh pow 2:8 eq power
+    mh abs -42 eq absolute
+    mh clamp val:0:100 eq bounded
+    mh sin 30 eq s
+    mh cos 60 eq c
     mh rnd 1:100 eq roll
 
 2D Physics & Collision:
-    # AABB Bounding Box Collision (returns 1 if intersecting, 0 otherwise)
     box_hit x1:y1:w1:h1 x2:y2:w2:h2 tit is_hit
 
-    # Vector Math
     vec_add x1:y1 x2:y2 tit sum_vector
     vec_mag x:y tit length
 
@@ -237,8 +235,8 @@ Trappy v1.0 features native perspective 3D rendering:
 13. OS & LOW-LEVEL MEMORY PRIMITIVES
 ================================================================================
     mem_alloc 64 tit buffer_id
-    mem_write buffer_id:0:65        # Writes byte 65 ('A') to offset 0
-    mem_read buffer_id:0 tit val    # Reads byte from offset 0
+    mem_write buffer_id:0:65
+    mem_read buffer_id:0 tit val
     sys_env "PATH" tit sys_path
     sys_exec "echo Hello" tit output
 
@@ -247,7 +245,7 @@ Trappy v1.0 features native perspective 3D rendering:
 ================================================================================
     cwin "Trappy Game" 600:400 main
     sbgwin "Trappy Game" black
-    fps calm                        # Hardware-calm monitor VSync
+    fps calm
 
     gloop
         circ player.x:player.y 16 cyan
@@ -258,8 +256,8 @@ Trappy v1.0 features native perspective 3D rendering:
 ================================================================================
 15. SOUND & CHIPTUNE AUDIO SYNTHESIZER
 ================================================================================
-    synth "square":440:150          # Synthesizes 440Hz tone for 150ms
-    beep 1000:80                    # High pitch beep
+    synth "square":440:150
+    beep 1000:80
     play "sound.wav"
 
 ================================================================================
@@ -318,7 +316,6 @@ trst
     json_dump save_data tit payload
     file_write "backup_score.dat":payload
 
-    # 1-line Discord notification
     txt "https://discord.com/api/webhooks/your_hook_here" tit hook
     txt "Trappy v1.0 notification: New High Score Recorded!" tit alert
     discord_webhook hook:alert tit status

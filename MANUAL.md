@@ -133,11 +133,11 @@ gan all_keys
 
 ```trappy
 lst 10 | 20 | 30 eq scores
-lget scores:0 tit first_score       # 10
-lset scores:1:99                   # Updates 20 -> 99
-lpush scores:50                    # Appends 50
-llen scores tit count              # Returns 4
-lpop scores tit last_val           # Pops and returns 50
+lget scores:0 tit first_score
+lset scores:1:99
+lpush scores:50
+llen scores tit count
+lpop scores tit last_val
 ```
 
 ---
@@ -212,21 +212,19 @@ download "https://example.com/asset.png" into "asset.png"
 
 ```trappy
 mh 10 + 5 eq total
-mh sqrt 144 eq root             # 12.0
-mh pow 2:8 eq power             # 256.0
-mh abs -42 eq absolute          # 42.0
-mh clamp val:0:100 eq bounded   # Keeps val between 0 and 100
-mh sin 30 eq s                  # 0.5
-mh cos 60 eq c                  # 0.5
+mh sqrt 144 eq root
+mh pow 2:8 eq power
+mh abs -42 eq absolute
+mh clamp val:0:100 eq bounded
+mh sin 30 eq s
+mh cos 60 eq c
 mh rnd 1:100 eq roll
 ```
 
 ### 2D Physics & Collision
 ```trappy
-# AABB Bounding Box Collision Check (returns 1 if hit, 0 if not)
 box_hit x1:y1:w1:h1 x2:y2:w2:h2 tit is_hit
 
-# Vector Operations
 vec_add x1:y1 x2:y2 tit sum_vector
 vec_mag x:y tit length
 ```
@@ -264,8 +262,8 @@ line3d x1:y1:z1 x2:y2:z2 rx:ry color
 
 ```trappy
 mem_alloc 64 tit buffer_id
-mem_write buffer_id:0:65        # Writes ASCII 65 ('A') to offset 0
-mem_read buffer_id:0 tit val    # Reads byte from offset 0
+mem_write buffer_id:0:65
+mem_read buffer_id:0 tit val
 sys_env "PATH" tit sys_path
 sys_exec "echo Hello" tit output
 ```
@@ -277,7 +275,7 @@ sys_exec "echo Hello" tit output
 ```trappy
 cwin "Trappy Game" 600:400 main
 sbgwin "Trappy Game" black
-fps calm                        # Hardware-calm monitor VSync
+fps calm
 
 gloop
     circ player.x:player.y 16 cyan
@@ -291,8 +289,8 @@ tren
 ## 15. Sound & Chiptune Audio Synthesizer
 
 ```trappy
-synth "square":440:150          # 440 Hz tone for 150ms
-beep 1000:80                    # High pitch beep
+synth "square":440:150
+beep 1000:80
 play "sound.wav"
 ```
 
@@ -364,7 +362,6 @@ trst
     json_dump save_data tit payload
     file_write "backup_score.dat":payload
 
-    # 1-line Discord notification
     txt "https://discord.com/api/webhooks/your_hook_here" tit hook
     txt "Trappy v1.0 notification: New High Score Recorded!" tit alert
     discord_webhook hook:alert tit status

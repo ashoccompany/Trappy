@@ -1,14 +1,6 @@
-# =====================================================================
-# TRAPPY DISCORD & ONLINE CONNECT DEMO (.trappy)
-# Demonstrating:
-# 1. Sending automated Discord channel notifications via webhook
-# 2. JSON serialization and data dumping
-# 3. Offline resilient loopback socket connection
-# =====================================================================
 trst
     gan "=== TRAPPY DISCORD & ONLINE CONNECTIVITY ==="
 
-    # 1. Preparing Discord Notification Payload
     dict tit notify_data
     dset notify_data:"app":"Trappy Game Engine"
     dset notify_data:"status":"Online"
@@ -19,8 +11,6 @@ trst
     gan "Serialized Payload for Web API:"
     gan payload_json
 
-    # 2. Discord Webhook Trigger (Simple 1-line syntax)
-    # Replace with your actual Discord Webhook URL:
     txt "https://discord.com/api/webhooks/your_webhook_id/your_token" tit discord_url
     txt "Trappy v1.0 Global Online System active! High Score recorded." tit alert_msg
 
@@ -29,7 +19,6 @@ trst
     gan "Discord Webhook Request Status:"
     gan http_status
 
-    # 3. Offline-Resilient Virtual Loopback Bus
     gan "Connecting to Trappy loopback streaming bus..."
     cli_connect "loopback":7777 tit local_bus
     cli_send local_bus:"PING: Trappy v1.0 Event Sync"

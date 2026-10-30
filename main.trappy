@@ -1,12 +1,7 @@
-# ========================================================
-# TRAPPY SHOWCASE PROGRAM (.trappy)
-# ========================================================
 trst
-    # 1. TEXT ASSIGNMENT (txt ... tit ...)
     txt "Hello World" tit greeting
     gan greeting
 
-    # 2. TEXT FUNCTION (ftxt) WITH ANSWER (answ)
     ftxt shout word
         answ word + "!!!"
     tren
@@ -14,7 +9,6 @@ trst
     txt shout greeting tit loud_greeting
     gan loud_greeting
 
-    # 3. CONDITIONS (ifr ... grt/lss/sm ... then ... tren)
     mh 25 eq score
     ifr score 10 grt
         gan "Big number!"
@@ -22,16 +16,13 @@ trst
         gan "Small number!"
     tren
 
-    # 4. REPETITION & LOOPS (rep ... srep / loop ... sloop)
     rep 3
         gan "Trappy loop running!"
     tren
 
-    # 5. LISTS (num | num | num)
     lst 100 | 200 | 300 | 400 eq highscores
     gan highscores
 
-    # 6. DELETE TRIGGER (fdel & trg)
     fdel wipe_cache target
     tren
 

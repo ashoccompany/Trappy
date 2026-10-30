@@ -1,29 +1,18 @@
-# =====================================================================
-# TRAPPY UNIVERSAL FILE I/O & SAVE SYSTEM DEMO (.trappy)
-# Demonstrating:
-# 1. Offline game save file creation and loading
-# 2. Key-value player stats inventory with dict & dset
-# 3. File existence checks and directory listing
-# =====================================================================
 trst
     gan "=== TRAPPY FILE SYSTEM & OFFLINE STORAGE ==="
 
-    # 1. Create Player Inventory using v1.0 Dictionaries
     dict tit player_profile
     dset player_profile:"name":"TrappyKnight"
     dset player_profile:"level":12
     dset player_profile:"gold":750
     dset player_profile:"equipped_weapon":"Crystal Blade"
 
-    # Serialize to JSON for offline storage
     json_dump player_profile tit save_content
 
-    # 2. Save profile to disk
     txt "player_save.dat" tit save_filename
     file_write save_filename:save_content
     gan "Saved profile data to local file: player_save.dat"
 
-    # 3. Verify existence and load back
     file_exists save_filename tit exists_flag
     ifr exists_flag sm 1
         gan "File verified on local storage! Reading data back..."
@@ -44,7 +33,6 @@ trst
         gan "Error: Save file was not found!"
     tren
 
-    # 4. Clean up save file
     file_delete save_filename
     gan "Save file cleaned up. System ready."
     gan "=== DEMO COMPLETE ==="

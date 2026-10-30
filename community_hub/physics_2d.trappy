@@ -1,7 +1,3 @@
-# =====================================================================
-# COMMUNITY PACKAGE: physics_2d.trappy
-# Standard 2D physics: velocity update and wall bounding
-# =====================================================================
 trst
     fmh apply_gravity y:vel
         answ y + vel

@@ -1,12 +1,3 @@
-# =====================================================================
-# TRAPPY IDE - OFFICIAL INTEGRATED DEVELOPMENT ENVIRONMENT (v1.0.0 GLOBAL)
-# Official Community & Source Links:
-# Discord: https://discord.gg/WRTG3spWH (Official Community Headquarters)
-# GitHub:  https://github.com/ashoccompany/Trappy
-# X:       https://x.com/tr4ppyai
-# Code Editor, F1 Offline Docs Browser, Quick Code Assist & Budget Runner
-# =====================================================================
-
 import sys
 import os
 import re
@@ -18,56 +9,39 @@ from tkinter import ttk, filedialog, messagebox
 
 import trappy
 
-# Trappy Theme Colors
 BG_DARK = "#18181b"
 BG_SIDE = "#202024"
 BG_LINKS = "#141417"
 BG_EDITOR = "#121214"
 TEXT_COLOR = "#f4f4f5"
-ACCENT_COLOR = "#06b6d4"   # Cyan
-KEYWORD_COLOR = "#f97316"  # Orange
-STRING_COLOR = "#eab308"   # Yellow
-COMMENT_COLOR = "#22c55e"  # Green
-NUMBER_COLOR = "#38bdf8"   # Light Blue
-GHOST_COLOR = "#71717a"    # Grey ghost text for Quick Code Assist
-DISCORD_COLOR = "#5865F2"  # Discord Blurple
+ACCENT_COLOR = "#06b6d4"
+KEYWORD_COLOR = "#f97316"
+STRING_COLOR = "#eab308"
+COMMENT_COLOR = "#22c55e"
+NUMBER_COLOR = "#38bdf8"
+GHOST_COLOR = "#71717a"
+DISCORD_COLOR = "#5865F2"
 
-# Vocabulary for Quick Code Assist
 ASSIST_KEYWORDS = [
-    # Program structure
     "trst", "tren",
-    # UI and Windowing
     "cwin", "sbgwin", "label", "regle", "circ", "line", "btn", "inp",
-    # 3D Wireframe Graphics (v1.0)
     "cube3d", "line3d", "sphere3d", "pyramid3d",
-    # Loops and Controls
     "gloop", "fps calm", "fps lock", "rep", "loop", "srep", "sloop", "each", "in",
-    # Declarations
     "add_obj", "add_var", "add_func",
-    # Packets, Discord & Universal Connectivity (v1.0)
     "discord_webhook", "json_parse", "json_dump",
     "pack_data", "unpack_data", "cli_connect", "cli_send", "cli_recv", "cli_close",
     "srv_listen", "srv_accept", "http_get", "http_post", "download",
     "ws_connect", "ws_send", "ws_recv", "ws_close",
-    # Dictionaries & Collections (v1.0)
     "dict", "dset", "dget", "dkeys",
     "lst", "lget", "lset", "llen", "lpush", "lpop",
-    # Universal File I/O Suite (v1.0)
     "file_write", "file_read", "file_append", "file_exists", "file_delete", "dir_list",
-    # Conditions and Logic
     "ifr", "then", "else", "grt", "lss", "sm",
-    # Text, Variables & Math
     "txt", "tit", "gan", "answ", "rt", "mh", "eq",
-    # Math, Physics & Collisions (v1.0)
     "sqrt", "dist", "clamp", "pow", "abs", "sin", "cos", "rnd",
     "box_hit", "vec_add", "vec_mag",
-    # OS & Low-Level Memory
     "mem_alloc", "mem_write", "mem_read", "sys_exec", "sys_env",
-    # Audio
     "synth", "beep", "play", "key",
-    # Functions
     "fmh", "ftxt", "flist", "fweb", "fcli", "fapp", "fdel", "fui", "f3d", "fos",
-    # General
     "true", "false", "import", "exit"
 ]
 
@@ -75,7 +49,6 @@ HIGHLIGHT_KEYWORDS = list(set(ASSIST_KEYWORDS + [
     "fps", "calm", "lock", "unlock", "psed", "changed", "flkey", "mousel", "mouser"
 ]))
 
-# Built-in Offline Documentation Database for F1 Help Window
 MANUAL_DATABASE = [
     ("discord_webhook", "discord_webhook url:msg tit status", "Sends a live notification to a Discord channel via Webhook. Returns HTTP status 204 or error.", 'discord_webhook "https://discord.com/api/webhooks/...":"Player won!" tit res'),
     ("dict", "dict tit var_name", "Initializes a fast key-value dictionary hash map.", 'dict tit inventory\ndset inventory:"gold":500\ndget inventory:"gold" tit gold'),
@@ -107,7 +80,6 @@ MANUAL_DATABASE = [
     ("gloop", "gloop ... tren", "Hardware-synchronized continuous game loop.", 'gloop\n    circ player.x:player.y 16 cyan\ntren')
 ]
 
-
 class TrappyIDE:
     def __init__(self, root):
         self.root = root
@@ -125,7 +97,6 @@ class TrappyIDE:
         self._setup_highlighting()
         self.load_default_code()
 
-        # Keyboard shortcuts
         self.root.bind("<F1>", lambda e: self.open_manual_window())
         self.root.bind("<F5>", lambda e: self.run_code())
         self.root.bind("<F6>", lambda e: self.debug_code())
@@ -139,7 +110,6 @@ class TrappyIDE:
         self.is_focused = focused
 
     def _create_ui(self):
-        # 1. Top Action Toolbar
         toolbar = tk.Frame(self.root, bg=BG_SIDE, height=45)
         toolbar.pack(fill="x", side="top")
 
@@ -149,12 +119,10 @@ class TrappyIDE:
         tk.Button(toolbar, text="[Open]", command=self.open_file, **btn_style).pack(side="left", padx=3, pady=5)
         tk.Button(toolbar, text="[Save (Ctrl+S)]", command=self.save_file, **btn_style).pack(side="left", padx=3, pady=5)
 
-        # F1 Help Button
         doc_btn = dict(btn_style)
-        doc_btn["bg"] = "#0d9488"  # Teal
+        doc_btn["bg"] = "#0d9488"
         tk.Button(toolbar, text="[Manual / Docs (F1)]", command=self.open_manual_window, **doc_btn).pack(side="left", padx=4, pady=5)
 
-        # Example selector dropdown
         self.example_var = tk.StringVar(value="Load Example...")
         examples = [
             "3D Multi-Shapes (Cube, Sphere, Pyramid)",
@@ -168,26 +136,22 @@ class TrappyIDE:
         dropdown = ttk.OptionMenu(toolbar, self.example_var, "Load Example...", *examples, command=self.load_example)
         dropdown.pack(side="left", padx=6, pady=5)
 
-        # Discord Headquarters Button
         discord_btn = dict(btn_style)
         discord_btn["bg"] = DISCORD_COLOR
         tk.Button(toolbar, text="[Discord Community]", command=lambda: webbrowser.open_new_tab("https://discord.gg/WRTG3spWH"), **discord_btn).pack(side="left", padx=4, pady=5)
 
-        # Community Hub Button
         hub_btn = dict(btn_style)
-        hub_btn["bg"] = "#0284c7"  # Sky blue
+        hub_btn["bg"] = "#0284c7"
         tk.Button(toolbar, text="[Community Hub (TPM)]", command=self.open_community_hub, **hub_btn).pack(side="left", padx=4, pady=5)
 
-        # Action Buttons
         debug_btn = dict(btn_style)
-        debug_btn["bg"] = "#4338ca"  # Indigo
+        debug_btn["bg"] = "#4338ca"
         tk.Button(toolbar, text="[Debug / Check (F6)]", command=self.debug_code, **debug_btn).pack(side="right", padx=6, pady=5)
 
         run_btn = dict(btn_style)
-        run_btn["bg"] = "#059669"  # Emerald green
+        run_btn["bg"] = "#059669"
         tk.Button(toolbar, text="[RUN TRAPPY (F5)]", command=self.run_code, **run_btn).pack(side="right", padx=6, pady=5)
 
-        # 2. Watermark Links Bar
         links_bar = tk.Frame(self.root, bg=BG_LINKS, height=28)
         links_bar.pack(fill="x", side="top")
 
@@ -208,20 +172,16 @@ class TrappyIDE:
         assist_badge = tk.Label(links_bar, text="[Quick Assist: Active | F1: Manual]", bg=BG_LINKS, fg="#94a3b8", font=("Consolas", 8))
         assist_badge.pack(side="right", padx=10, pady=3)
 
-        # 3. Main Area (Split into Editor and Console)
         paned = tk.PanedWindow(self.root, orient="vertical", bg=BG_DARK, sashwidth=4)
         paned.pack(fill="both", expand=True)
 
-        # Editor Frame
         editor_frame = tk.Frame(paned, bg=BG_EDITOR)
         paned.add(editor_frame, height=450)
 
-        # Line Numbers
         self.line_numbers = tk.Text(editor_frame, width=4, bg=BG_SIDE, fg="#71717a", font=("Consolas", 12), bd=0, padx=4, pady=6)
         self.line_numbers.pack(side="left", fill="y")
         self.line_numbers.configure(state="disabled")
 
-        # Code Area
         self.code_text = tk.Text(editor_frame, bg=BG_EDITOR, fg=TEXT_COLOR, insertbackground="white", font=("Consolas", 12), bd=0, padx=8, pady=6, undo=True)
         self.code_text.pack(side="left", fill="both", expand=True)
 
@@ -229,12 +189,10 @@ class TrappyIDE:
         scroll.pack(side="right", fill="y")
         self.code_text.configure(yscrollcommand=scroll.set)
 
-        # Editor Key Events for Quick Assist & Editing
         self.code_text.bind("<KeyPress>", self._on_key_press)
         self.code_text.bind("<KeyRelease>", self._on_key_release)
         self.code_text.bind("<Button-1>", lambda e: self.clear_ghost())
 
-        # Console Frame
         console_frame = tk.Frame(paned, bg=BG_DARK)
         paned.add(console_frame, height=200)
 
@@ -246,7 +204,6 @@ class TrappyIDE:
         self.console = tk.Text(console_frame, bg="#09090b", fg="#22c55e", font=("Consolas", 10), bd=0, padx=8, pady=6)
         self.console.pack(fill="both", expand=True)
 
-        # Status Bar
         self.status = tk.Label(
             self.root,
             text="Ready | Trappy v1.0.0 Global Release | Discord: discord.gg/WRTG3spWH | Press F1 for Docs, F5 to Run",
@@ -299,9 +256,6 @@ class TrappyIDE:
         for m in re.finditer(kw_pattern, content):
             self.code_text.tag_add("keyword", f"1.0+{m.start()}c", f"1.0+{m.end()}c")
 
-    # =====================================================================
-    # F1 BUILT-IN OFFLINE MANUAL & COMMAND REFERENCE BROWSER
-    # =====================================================================
     def open_manual_window(self):
         if self.manual_win and tk.Toplevel.winfo_exists(self.manual_win):
             self.manual_win.lift()
@@ -312,7 +266,6 @@ class TrappyIDE:
         self.manual_win.geometry("700x550")
         self.manual_win.configure(bg=BG_DARK)
 
-        # Header Search Frame
         search_frame = tk.Frame(self.manual_win, bg=BG_SIDE, padx=10, pady=8)
         search_frame.pack(fill="x", side="top")
 
@@ -324,11 +277,9 @@ class TrappyIDE:
 
         tk.Label(search_frame, text="Discord Help: discord.gg/WRTG3spWH", bg=BG_SIDE, fg="#a78bfa", font=("Consolas", 9)).pack(side="right")
 
-        # Split frame: List of commands on left, details on right
         content_paned = tk.PanedWindow(self.manual_win, orient="horizontal", bg=BG_DARK, sashwidth=4)
         content_paned.pack(fill="both", expand=True, padx=8, pady=8)
 
-        # Left Listbox
         list_frame = tk.Frame(content_paned, bg=BG_EDITOR)
         content_paned.add(list_frame, width=220)
 
@@ -338,7 +289,6 @@ class TrappyIDE:
         list_scroll.pack(side="right", fill="y")
         cmd_listbox.configure(yscrollcommand=list_scroll.set)
 
-        # Right Detail View
         detail_frame = tk.Frame(content_paned, bg=BG_SIDE, padx=12, pady=10)
         content_paned.add(detail_frame, width=460)
 
@@ -400,9 +350,6 @@ class TrappyIDE:
         search_var.trace_add("write", lambda *args: refresh_list())
         refresh_list()
 
-    # =====================================================================
-    # QUICK CODE ASSIST ENGINE
-    # =====================================================================
     def clear_ghost(self):
         if not self.ghost_text:
             return
@@ -511,7 +458,7 @@ class TrappyIDE:
     def new_file(self):
         self.clear_ghost()
         self.code_text.delete("1.0", "end")
-        self.code_text.insert("1.0", "trst\n    # Your Trappy Code here\n    gan \"Hello from Trappy IDE!\"\ntren\n")
+        self.code_text.insert("1.0", "trst\n    gan \"Hello from Trappy IDE!\"\ntren\n")
         self.current_file = None
         self.status.config(text="New file created.")
         self.update_line_numbers()
@@ -571,7 +518,7 @@ class TrappyIDE:
         base_dir = os.path.dirname(os.path.abspath(__file__)) if not getattr(sys, 'frozen', False) else os.path.dirname(sys.executable)
         py_runner = shutil.which("python") or r"C:\Python315\python.exe"
         tpm_script = os.path.join(base_dir, "tpm.py")
-        
+
         def run_hub():
             proc = subprocess.Popen([py_runner, tpm_script, "search"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             stdout, stderr = proc.communicate()
@@ -580,7 +527,7 @@ class TrappyIDE:
             if stderr:
                 self.root.after(0, lambda: self.log(stderr, is_err=True))
             self.root.after(0, lambda: self.status.config(text="Community Hub packages loaded."))
-        
+
         threading.Thread(target=run_hub, daemon=True).start()
 
     def load_default_code(self):
@@ -596,7 +543,7 @@ class TrappyIDE:
             self.new_file()
         self.update_line_numbers()
         self._schedule_highlight()
-        
+
         self.log("=====================================================================")
         self.log("TRAPPY STUDIO IDE (v1.0.0 GLOBAL RELEASE)")
         self.log("Discord: https://discord.gg/WRTG3spWH (Official Community Headquarters)")
@@ -665,7 +612,6 @@ class TrappyIDE:
                 self.root.after(0, lambda: self.log(f"[RUN ERROR]: Could not launch runner: {e}", is_err=True))
 
         threading.Thread(target=run_thread, daemon=True).start()
-
 
 if __name__ == "__main__":
     import multiprocessing

@@ -1,15 +1,9 @@
-# =====================================================================
-# COMMUNITY PACKAGE: packet_utils.trappy
-# Provides reusable packet packing and unpacking utilities
-# =====================================================================
 trst
-    # Helper to format a standard game state packet
     ftxt make_game_packet player:x:y
         txt "HEADER:GAME_STATE,PLAYER:" + player + ",X:" + x + ",Y:" + y tit pkt
         answ pkt
     tren
 
-    # Helper to format a chat message packet
     ftxt make_chat_packet sender:msg
         txt "HEADER:CHAT,SENDER:" + sender + ",MSG:" + msg tit pkt
         answ pkt

@@ -47,17 +47,14 @@ Discord is the central community hub for Trappy. Join to share packages, get ins
 
 ```trappy
 trst
-    # Create player profile with v1.0 Dictionaries
     dict tit profile
     dset profile:"hero":"TrappyKnight"
     dset profile:"gold":1200
     dset profile:"level":8
 
-    # Save to disk as JSON
     json_dump profile tit save_data
     file_write "savegame.dat":save_data
 
-    # Send automated Discord announcement
     txt "https://discord.com/api/webhooks/your_webhook_url" tit hook_url
     txt "Player TrappyKnight reached Level 8!" tit announcement
     discord_webhook hook_url:announcement tit http_status
@@ -81,15 +78,12 @@ trst
         label "TRAPPY 3D MULTI-SHAPE ENGINE" 350:25 cyan
         label "CONTROLS: [W/S] Pitch | [A/D] Yaw" 350:470 yellow
 
-        # Continuous auto-spin
         mh rot_y + 1 eq rot_y
 
-        # Draw wireframe 3D shapes side by side
         cube3d 180:250:0 90 rot_x:rot_y cyan
         sphere3d 350:250:0 48 rot_x:rot_y green
         pyramid3d 520:250:0 100 rot_x:rot_y yellow
 
-        # Interactive rotation controls
         ifr key "W" trg then mh rot_x - 3 eq rot_x
         ifr key "S" trg then mh rot_x + 3 eq rot_x
         ifr key "A" trg then mh rot_y - 3 eq rot_y
@@ -110,7 +104,6 @@ trst
 
     pack_data sync_pkt tit outgoing_pkt
 
-    # Connect to virtual loopback channel (works 100% offline)
     cli_connect "loopback":8080 tit client
     cli_send client:outgoing_pkt
     cli_recv client tit received_pkt
@@ -135,7 +128,6 @@ trst
         circ player_x:player_y 16 cyan
         regle 150:180 50:50 red
 
-        # Check collision with hazard box
         box_hit player_x:player_y:16:16 150:180:50:50 tit is_hit
         ifr is_hit sm 1
             label "COLLISION DETECTED!" 300:100 yellow
