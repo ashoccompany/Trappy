@@ -1,22 +1,28 @@
 # Trappy Programming Language
 
-Trappy is an independent programming language built from scratch. It is designed to be approachable for beginners while providing built-in tools for desktop applications, 2D canvas games, and web requests without requiring third-party libraries.
+Trappy is an independent, general-purpose programming language built from scratch. Its guiding design principle is simple: **simple needs to be simple**. Beginners should be able to write working code immediately, while advanced tasks like networking packets, 2D games, and community package distribution should stay clean and readable without pages of boilerplate.
 
-The language uses explicit start and end blocks (`trst` and `tren`), categorized function prefixes, and an object manifest system.
+Current version: **v0.9 (Beta)**
 
-Current version: **v0.8.5 (Beta)**
+---
+
+## Design Principles
+
+* **Simple Needs to Be Simple:** Networking, object manifests, and graphics should not require dozens of configuration lines. Packing data into a network stream takes one line (`pack data tit pkt`). Connecting a client takes one line (`cli_connect "127.0.0.1":8080 tit client`).
+* **Noise-Free Boundaries:** Explicit program and function boundaries using `trst` (start) and `tren` (end) instead of curly braces or strict whitespace rules.
+* **Semantic Function Prefixes:** Prefixes identify function types directly in source code: `fmh` for math, `ftxt` for strings, `fcli` for networking clients, `fui` for interface actions, and `fdel` for memory cleanup.
+* **Batteries Included:** 2D graphics, windowing, audio synthesis, HTTP clients, and package management are built directly into the runtime without requiring external dependencies.
 
 ---
 
 ## Key Features
 
-* **Readable Syntax:** Clean block boundaries using `trst` and `tren` instead of braces or strict indentation rules.
-* **Built-in 2D Game Engine:** Native window creation (`cwin`), primitive shape drawing (`circ`, `regle`), keyboard detection, and frame pacing (`fps calm`) that syncs with display refresh rates.
-* **Web and Network Utilities:** Native HTTP GET/POST queries (`http_get`, `http_post`) and file downloading (`download`) included directly in the runtime.
-* **Object Manifests:** Explicit declarations at the top of programs with dot-notation property access (`player.x`, `player.hp`).
-* **Categorized Functions:** Prefixes indicate function behavior at a glance (`fmh` for math, `ftxt` for text, `fweb` for network tasks, `fui` for interface events, `fdel` for memory cleanup).
-* **Package Management:** A built-in CLI tool (`tpm`) for installing and managing external Trappy scripts.
-* **Dedicated Desktop Studio:** Comes with `TrappyIDE.exe`, a standalone editor with syntax highlighting, an integrated console, and one-click run and debug capabilities.
+* **Packets and Networking:** Serialize structured data into streamable packets with `pack` and restore them with `unpack`. Built-in non-blocking client and server sockets (`cli_connect`, `cli_send`, `cli_recv`, `srv_listen`, `srv_accept`) designed to run smoothly inside game loops.
+* **Community Hub & Package Manager (TPM):** Search, install, and publish community creations directly from the terminal or IDE using `tpm search`, `tpm install`, and `tpm publish`.
+* **2D Canvas Game Engine:** Native window creation (`cwin`), primitive rendering (`circ`, `regle`, `line`), keyboard/mouse input, and frame pacing (`fps calm`) that matches display refresh rates to keep CPU usage low.
+* **Universal Web Client:** Direct HTTP GET and POST requests (`http_get`, `http_post`) and file downloading (`download`).
+* **Object Manifests:** Structured object creation with dot notation (`player.x`, `player.hp`) registered through an explicit header (`add_obj`, `add_var`).
+* **Dedicated Studio:** Ships with `TrappyIDE.exe`, a standalone code editor with syntax highlighting, an integrated terminal, one-click execution (F5), debugging (F6), and a Community Hub package viewer.
 
 ---
 
@@ -26,8 +32,11 @@ Current version: **v0.8.5 (Beta)**
 
 ```trappy
 trst
-    txt "Hello from Trappy" tit message
-    gan message
+    txt "Hello from Trappy" tit greeting
+    gan greeting
+
+    mh 10 + 5 eq total
+    gan total
 tren
 ```
 
@@ -41,13 +50,35 @@ trst
         speed: 5
     tren
 
-    mh player.hp - 15 eq player.hp
+    mh player.hp - 20 eq player.hp
     gan "Remaining HP:"
     gan player.hp
 tren
 ```
 
-### 3. Basic 2D Game Loop
+### 3. Packets and Client Networking
+
+```trappy
+trst
+    add_obj "player_sync"
+        id: 42
+        x: 250
+        y: 180
+    tren
+
+    # Pack object into a transmission stream
+    pack player_sync tit packet_data
+    gan packet_data
+
+    # Connect client and send
+    cli_connect "127.0.0.1":8080 tit client
+    cli_send client:packet_data
+    cli_recv client tit response
+    cli_close client
+tren
+```
+
+### 4. 2D Game Loop
 
 ```trappy
 trst
@@ -70,11 +101,11 @@ trst
 tren
 ```
 
-### 4. Fetching Data from the Web
+### 5. Web API Requests
 
 ```trappy
 trst
-    gan "Fetching quote from API..."
+    gan "Querying API..."
     http_get "https://api.github.com/zen" tit quote
     gan quote
 tren
@@ -82,32 +113,41 @@ tren
 
 ---
 
+## Package Management & Community Hub (TPM)
+
+Trappy includes its own package manager (`tpm`) so users can share code, download libraries, and collaborate:
+
+```
+tpm search [keyword]                Search for community packages
+tpm install <package_name_or_url>   Install a community package
+tpm publish <file.trappy> [author]  Publish code to the community hub
+tpm list                            List installed packages
+```
+
+---
+
 ## Tooling
 
-* **TrappyIDE.exe**: Standalone code editor. Press F5 to execute scripts or F6 to check for syntax errors.
-* **trpexec**: Terminal runner for executing `.trappy` source files.
+* **TrappyIDE.exe**: Standalone desktop editor. Press F5 to execute code or F6 to run a syntax check.
+* **trpexec**: Command-line runner for executing `.trappy` files.
   ```
   trpexec script.trappy
   ```
-* **tpm**: Package manager for installing and listing packages.
-  ```
-  tpm list
-  tpm install <package_url>
-  ```
+* **tpm**: Command-line tool for package installation and publishing.
 
 ---
 
 ## Project Status and Roadmap
 
-Trappy is currently in beta development. The staged milestones are:
+Trappy is currently in beta development:
 
-* **v0.8.5 (Current Beta):** Core language runtime, object manifests, 2D game loop, HTTP client, TPM package manager, and TrappyIDE studio.
-* **v0.9.0:** Extended math functions, multi-channel sound support, and multiple window handling.
-* **v0.9.5:** Runtime optimizations, benchmark suites, and error-handling hardening.
-* **v1.0.0:** First general release.
+* **v0.8.5:** Core runtime, object manifests, 2D game canvas, HTTP client, and TrappyIDE studio.
+* **v0.9.0 (Current Beta):** Structured packet engine (`pack`/`unpack`), non-blocking client/server sockets, and the TPM Community Hub.
+* **v0.9.5:** Performance tuning, runtime memory optimizations, and benchmark tests.
+* **v1.0.0:** First general stable release.
 
 ---
 
 ## License
 
-Trappy is developed as an open source project. Source code releases and distributions are staged according to milestone readiness.
+Trappy is an open source programming language project.
