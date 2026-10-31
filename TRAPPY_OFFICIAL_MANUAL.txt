@@ -1,6 +1,6 @@
 ================================================================================
                     TRAPPY PROGRAMMING LANGUAGE
-                    OFFICIAL REFERENCE MANUAL (v1.0.0 GLOBAL)
+                    OFFICIAL REFERENCE MANUAL (v1.15.0 RELEASE)
 ================================================================================
 Copyright (c) Trappy Language Project. All rights reserved.
 Official File Extension: .trappy
@@ -35,6 +35,9 @@ TABLE OF CONTENTS:
 18. LOOPS & REPETITION
 19. FUNCTIONS FAMILY (F-PREFIX)
 20. COMPLETE RUNNABLE EXAMPLE PROGRAMS
+21. SELF-HOSTING BOOTSTRAPPING & THE ROAD TO V2
+22. FULL STRING PROCESSING & REFLECTION SUITE
+23. MODERN CONTROL FLOW & ERROR HANDLING
 
 ================================================================================
 1. WHAT IS TRAPPY?
@@ -304,6 +307,9 @@ Trappy v1.0 features native perspective 3D rendering:
 
 ================================================================================
 20. COMPLETE RUNNABLE EXAMPLE PROGRAMS
+21. SELF-HOSTING BOOTSTRAPPING & THE ROAD TO V2
+22. FULL STRING PROCESSING & REFLECTION SUITE
+23. MODERN CONTROL FLOW & ERROR HANDLING
 ================================================================================
 
 PROGRAM 1: DISCORD NOTIFICATION & OFFLINE STORAGE
@@ -345,3 +351,43 @@ tren
 ================================================================================
                                 END OF MANUAL
 ================================================================================
+
+================================================================================
+21. SELF-HOSTING BOOTSTRAPPING & THE ROAD TO V2
+================================================================================
+Trappy v1.15 begins the transition to complete compiler self-hosting (v2 target).
+The bootstrapping prototype in `bootstrap/trappy_bootstrap.trappy` proves that Trappy
+can tokenize and parse its own source code in pure Trappy!
+
+================================================================================
+22. FULL STRING PROCESSING & REFLECTION SUITE
+================================================================================
+String operations:
+- slen str tit var              (string length)
+- sget str:idx tit var          (char at index)
+- ssub str:start:end tit var    (substring slice)
+- ssplit str:delim tit var      (split into list)
+- sjoin list:delim tit var      (join list into string)
+- sfind str:needle tit var      (find substring index, or -1)
+- sreplace str:old:new tit var  (replace occurrences)
+- strim str tit var             (strip whitespace)
+- slower / supper str tit var   (case conversion)
+- ord char tit var              (ASCII integer code)
+- chr code tit var              (char from ASCII integer code)
+- is_digit / is_alpha           (character classification)
+
+Type reflection:
+- type_of expr tit var          ("string", "number", "list", "dict", "bool", "nil")
+- to_str / to_num / to_float    (safe casting)
+
+================================================================================
+23. MODERN CONTROL FLOW & ERROR HANDLING
+================================================================================
+- while <cond> ... tren         (while loops)
+- break                         (break innermost loop)
+- continue                      (skip to next iteration)
+- try ... catch <err> ... tren  (safe error recovery)
+- fn / func <name> <params>     (universal function declarations)
+- return <expr>                 (return statement)
+- lcontains / linsert / lslice  (list utilities)
+- dhas / ddel                   (dictionary utilities)

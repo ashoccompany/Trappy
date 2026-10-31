@@ -1,4 +1,4 @@
-# Trappy Programming Language - Official Reference Manual (v1.1.0 Patch)
+# Trappy Programming Language - Official Reference Manual (v1.15.0 Release)
 
 Copyright (c) Trappy Language Project. All rights reserved.  
 Official File Extension: `.trappy`  
@@ -34,6 +34,9 @@ Standalone Studio: `TrappyIDE.exe`
 18. [Loops & Repetition](#18-loops--repetition)
 19. [Function Families](#19-function-families)
 20. [Complete Example Programs](#20-complete-example-programs)
+21. [Self-Hosting Bootstrapping & The Road to v2](#21-self-hosting-bootstrapping--the-road-to-v2)
+22. [Full String Processing & Reflection Suite](#22-full-string-processing--reflection-suite)
+23. [Modern Control Flow & Error Handling](#23-modern-control-flow--error-handling)
 
 ---
 
@@ -390,4 +393,113 @@ trst
         ifr key "S" trg then mh rot_x + 3 eq rot_x
     tren
 tren
+```
+
+---
+
+## 21. Self-Hosting Bootstrapping & The Road to v2
+
+Trappy v1.15 introduces the foundation for **compiler bootstrapping**. Bootstrapping is the milestone where a programming language is written in itself (self-hosting). 
+
+The official bootstrapping module is located at `bootstrap/trappy_bootstrap.trappy`:
+```trappy
+# Trappy Self-Hosting Lexer (Bootstrapping Prototype for v2)
+fn tokenize_trappy src
+    dict tit res
+    lst 0 eq token_types
+    lst 0 eq token_values
+    ...
+    return res
+tren
+```
+
+When Trappy v2 arrives, Trappy's runtime, parser, and code generator will be fully self-hosted, written in Trappy itself!
+
+---
+
+## 22. Full String Processing & Reflection Suite
+
+Trappy v1.15 includes comprehensive string manipulation and runtime type reflection:
+
+### String Suite
+```trappy
+txt "   Hello, Trappy!   " tit raw
+strim raw tit trimmed
+slen trimmed tit len_val
+sget trimmed:0 tit first_char
+ssub trimmed:0:5 tit greeting
+slower greeting tit lower_greeting
+supper greeting tit upper_greeting
+sreplace trimmed:"Trappy":"Community" tit replaced
+sfind trimmed:"Trappy" tit pos
+ord "A" tit ascii_code
+chr 65 tit char_out
+is_digit "12345" tit is_num
+is_alpha "my_var" tit is_ident
+ssplit "10,20,30":"," tit list_items
+sjoin list_items:" - " tit formatted_str
+```
+
+### Type Introspection & Safe Casting
+```trappy
+type_of 42 tit t1             # "number"
+type_of "hello" tit t2        # "string"
+type_of my_list tit t3        # "list"
+type_of my_dict tit t4        # "dict"
+
+to_str 999 tit str_val        # "999"
+to_num "42" tit int_val       # 42
+to_float "3.14" tit flt_val   # 3.14
+```
+
+---
+
+## 23. Modern Control Flow & Error Handling
+
+### While Loops & Universal Break/Continue
+```trappy
+mh 0 eq i
+while i < 10
+    mh i + 1 eq i
+    ifr i == 5
+        continue              # skip to next iteration
+    tren
+    ifr i == 8
+        break                 # break out of while loop
+    tren
+    gan i
+tren
+```
+
+### First-Class Functions (`fn` and `func`)
+```trappy
+fn calculate_area width:height
+    mh width * height eq area
+    return area
+tren
+
+calculate_area 20:30 tit room_area
+gan room_area
+```
+
+### Safe Error Recovery (`try ... catch`)
+```trappy
+try
+    mh 100 / 0 eq bad_math
+catch err
+    gan "Safely recovered from error:"
+    gan err
+tren
+```
+
+### Enhanced Collections
+```trappy
+# Lists
+lcontains items:42 tit has_it
+linsert items:0:999
+lslice items:0:3 tit sub_list
+
+# Dictionaries
+dhas player:"score" tit has_score
+ddel player:"temp_tag"
 ```

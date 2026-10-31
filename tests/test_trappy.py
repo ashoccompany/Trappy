@@ -332,5 +332,189 @@ tren
         interp = trappy.run_trappy(code)
         self.assertEqual(interp.global_env.get("got"), "val")
 
+
+class TestV115FeaturesAndBootstrapping(unittest.TestCase):
+    def test_string_operations_suite(self):
+        code = """
+trst
+    txt "  Hello, Trappy World!  " tit raw
+    strim raw tit trimmed
+    slen trimmed tit length
+    sget trimmed:0 tit first_char
+    ssub trimmed:0:5 tit greeting
+    slower greeting tit lower_greeting
+    supper greeting tit upper_greeting
+    sreplace trimmed:"World":"Community" tit replaced
+    sfind trimmed:"Trappy" tit found_pos
+    ord "A" tit ord_a
+    chr 66 tit chr_b
+    is_digit "12345" tit digit_ok
+    is_digit "123a" tit digit_no
+    is_alpha "Variable_Name" tit alpha_ok
+    ssplit "apple,banana,cherry":"," tit fruits
+    sjoin fruits:" - " tit fruits_joined
+tren
+"""
+        interp = trappy.run_trappy(code)
+        env = interp.global_env
+        self.assertEqual(env.get("trimmed"), "Hello, Trappy World!")
+        self.assertEqual(env.get("length"), 20)
+        self.assertEqual(env.get("first_char"), "H")
+        self.assertEqual(env.get("greeting"), "Hello")
+        self.assertEqual(env.get("lower_greeting"), "hello")
+        self.assertEqual(env.get("upper_greeting"), "HELLO")
+        self.assertEqual(env.get("replaced"), "Hello, Trappy Community!")
+        self.assertEqual(env.get("found_pos"), 7)
+        self.assertEqual(env.get("ord_a"), 65)
+        self.assertEqual(env.get("chr_b"), "B")
+        self.assertEqual(env.get("digit_ok"), 1)
+        self.assertEqual(env.get("digit_no"), 0)
+        self.assertEqual(env.get("alpha_ok"), 1)
+        self.assertEqual(env.get("fruits"), ["apple", "banana", "cherry"])
+        self.assertEqual(env.get("fruits_joined"), "apple - banana - cherry")
+
+    def test_type_reflection_and_casting(self):
+        code = """
+trst
+    txt "123" tit str_val
+    to_num str_val tit num_val
+    to_float "3.14159" tit float_val
+    to_str 999 tit str_converted
+    type_of "hello" tit t_str
+    type_of 42 tit t_num
+    lst 1 | 2 tit my_lst
+    type_of my_lst tit t_lst
+    dict tit my_dict
+    type_of my_dict tit t_dict
+tren
+"""
+        interp = trappy.run_trappy(code)
+        env = interp.global_env
+        self.assertEqual(env.get("num_val"), 123)
+        self.assertAlmostEqual(env.get("float_val"), 3.14159)
+        self.assertEqual(env.get("str_converted"), "999")
+        self.assertEqual(env.get("t_str"), "string")
+        self.assertEqual(env.get("t_num"), "number")
+        self.assertEqual(env.get("t_lst"), "list")
+        self.assertEqual(env.get("t_dict"), "dict")
+
+    def test_while_loops_and_breaks(self):
+        code = """
+trst
+    mh 0 eq i
+    mh 0 eq sum
+    while i < 10
+        mh i + 1 eq i
+        ifr i == 5
+            continue
+        tren
+        ifr i == 8
+            break
+        tren
+        mh sum + i eq sum
+    tren
+tren
+"""
+        interp = trappy.run_trappy(code)
+        # Sums 1, 2, 3, 4, (skips 5), 6, 7, (breaks at 8) = 1+2+3+4+6+7 = 23
+        self.assertEqual(interp.global_env.get("sum"), 23)
+
+    def test_universal_fn_and_return(self):
+        code = """
+trst
+    fn calculate_bonus base:multiplier
+        mh base * multiplier eq total
+        return total
+    tren
+
+    calculate_bonus 100:3 tit bonus1
+    fn get_version
+        return "1.15.0"
+    tren
+    get_version tit ver
+tren
+"""
+        interp = trappy.run_trappy(code)
+        env = interp.global_env
+        self.assertEqual(env.get("bonus1"), 300)
+        self.assertEqual(env.get("ver"), "1.15.0")
+
+    def test_collections_v115(self):
+        code = """
+trst
+    lst 10 | 20 | 30 | 40 | 50 eq numbers
+    lcontains numbers:30 tit has_30
+    lcontains numbers:99 tit has_99
+    linsert numbers:1:15
+    lslice numbers:0:3 tit slice_sub
+    dict tit profile
+    dset profile:"user":"admin"
+    dhas profile:"user" tit has_user
+    dhas profile:"password" tit has_pass
+    ddel profile:"user"
+    dhas profile:"user" tit has_user_after_del
+tren
+"""
+        interp = trappy.run_trappy(code)
+        env = interp.global_env
+        self.assertEqual(env.get("has_30"), 1)
+        self.assertEqual(env.get("has_99"), 0)
+        self.assertEqual(env.get("numbers"), [10, 15, 20, 30, 40, 50])
+        self.assertEqual(env.get("slice_sub"), [10, 15, 20])
+        self.assertEqual(env.get("has_user"), 1)
+        self.assertEqual(env.get("has_pass"), 0)
+        self.assertEqual(env.get("has_user_after_del"), 0)
+
+    def test_try_catch_safety(self):
+        code = """
+trst
+    mh 0 eq recovered
+    try
+        mh 100 / 0 eq fail
+    catch err
+        mh 1 eq recovered
+        txt err tit caught_err
+    tren
+tren
+"""
+        interp = trappy.run_trappy(code)
+        env = interp.global_env
+        self.assertEqual(env.get("recovered"), 1)
+        self.assertIn("Division by zero", env.get("caught_err"))
+
+    def test_modulo_and_arithmetic_operators(self):
+        code = """
+trst
+    mh 17 % 5 eq mod_res
+    mh 8 * 4 eq mul_res
+    mh 40 / 5 eq div_res
+tren
+"""
+        interp = trappy.run_trappy(code)
+        env = interp.global_env
+        self.assertEqual(env.get("mod_res"), 2)
+        self.assertEqual(env.get("mul_res"), 32)
+        self.assertEqual(env.get("div_res"), 8.0)
+
+    def test_self_hosting_bootstrap_lexer(self):
+        bootstrap_path = os.path.join(BASE_DIR, "bootstrap", "trappy_bootstrap.trappy")
+        with open(bootstrap_path, "r", encoding="utf-8") as f:
+            boot_src = f.read()
+
+        driver_code = f"""
+trst
+{boot_src}
+
+txt "add 100 to total" tit snippet
+tokenize_trappy snippet tit tok_result
+dget tok_result:"types" tit tok_types
+dget tok_result:"values" tit tok_values
+tren
+"""
+        interp = trappy.run_trappy(driver_code)
+        env = interp.global_env
+        self.assertEqual(env.get("tok_types"), ["NAME", "NUM", "NAME", "NAME"])
+        self.assertEqual(env.get("tok_values"), ["add", 100, "to", "total"])
+
 if __name__ == "__main__":
     unittest.main()

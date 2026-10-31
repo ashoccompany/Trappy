@@ -42,6 +42,11 @@ ASSIST_KEYWORDS = [
     "mem_alloc", "mem_write", "mem_read", "sys_exec", "sys_env",
     "synth", "beep", "play", "key",
     "fmh", "ftxt", "flist", "fweb", "fcli", "fapp", "fdel", "fui", "f3d", "fos",
+    "fn", "func", "return", "while", "swhile", "break", "continue", "cnt",
+    "try", "catch", "slen", "sget", "ssub", "ssplit", "sjoin", "sfind", "sreplace", "strim",
+    "slower", "supper", "ord", "chr", "is_digit", "is_alpha",
+    "type_of", "to_str", "to_num", "to_int", "to_float",
+    "lcontains", "linsert", "lslice", "dhas", "ddel",
     "true", "false", "import", "exit"
 ]
 
@@ -79,13 +84,39 @@ MANUAL_DATABASE = [
     ("fps calm", "fps calm", "Enables hardware-calm VSync to save CPU and battery.", 'fps calm'),
     ("gloop", "gloop ... tren", "Hardware-synchronized continuous game loop.", 'gloop\n    circ player.x:player.y 16 cyan\ntren'),
     ("ifr", "ifr a > b ... else ... tren", "Evaluates a condition and runs branch code based on the result.", 'ifr score > 10\n    gan "Winner!"\nelse\n    gan "Keep trying!"\ntren'),
-    ("else", "else", "Defines the alternative execution block in an ifr statement when condition is false.", 'ifr health < 1\n    gan "Game Over"\nelse\n    gan "Alive"\ntren')
+    ("else", "else", "Defines the alternative execution block in an ifr statement when condition is false.", 'ifr health < 1\n    gan "Game Over"\nelse\n    gan "Alive"\ntren'),
+    ("while", "while condition ... tren", "Executes body repeatedly while condition evaluates to true.", 'while i < 10\n    mh i + 1 eq i\ntren'),
+    ("break", "break", "Immediately breaks and terminates innermost loop (rep, loop, while, each).", 'ifr count == 5\n    break\ntren'),
+    ("continue", "continue", "Skips remaining statements and continues to next loop iteration.", 'ifr count == 3\n    continue\ntren'),
+    ("try", "try ... catch err ... tren", "Catches runtime exceptions and errors safely without crashing.", 'try\n    mh 10 / 0 eq fail\ncatch err\n    gan err\ntren'),
+    ("fn", "fn name params ... return val ... tren", "Universal function definition keyword with first-class return value support.", 'fn calculate_score base:mult\n    mh base * mult eq total\n    return total\ntren'),
+    ("slen", "slen text tit var", "Calculates character length of string expression.", 'slen "Trappy" tit str_len'),
+    ("sget", "sget text:index tit var", "Retrieves character from string at zero-based index.", 'sget "Trappy":0 tit first_ch'),
+    ("ssub", "ssub text:start:end tit var", "Extracts substring slice from start to end index.", 'ssub "Trappy Language":0:6 tit title'),
+    ("ssplit", "ssplit text:delimiter tit var", "Splits string by delimiter into a list of strings.", 'ssplit "10,20,30":"," tit list_vals'),
+    ("sjoin", "sjoin list:delimiter tit var", "Joins list elements into a single delimited string.", 'sjoin items:" - " tit formatted'),
+    ("sfind", "sfind text:needle tit var", "Finds index of substring, or -1 if needle is not found.", 'sfind "Welcome to Trappy":"Trappy" tit idx'),
+    ("sreplace", "sreplace text:old:new tit var", "Replaces all occurrences of substring with replacement.", 'sreplace "hello world":"world":"community" tit res'),
+    ("strim", "strim text tit var", "Strips leading and trailing whitespace characters.", 'strim "   spaced   " tit cleaned'),
+    ("ord", "ord char tit var", "Returns integer ASCII code of the first character.", 'ord "A" tit ascii_code'),
+    ("chr", "chr code tit var", "Returns single-character string from integer ASCII code.", 'chr 65 tit char_val'),
+    ("is_digit", "is_digit text tit var", "Returns 1 if string is composed purely of digits, else 0.", 'is_digit "12345" tit is_num'),
+    ("is_alpha", "is_alpha text tit var", "Returns 1 if string contains alphabetic/underscore characters, else 0.", 'is_alpha "my_var" tit is_id'),
+    ("type_of", "type_of value tit var", "Inspects runtime type: string, number, list, dict, bool, nil.", 'type_of 42 tit val_type'),
+    ("to_str", "to_str value tit var", "Converts value of any type to string representation.", 'to_str 999 tit str_val'),
+    ("to_num", "to_num value tit var", "Converts string/float value to integer number.", 'to_num "42" tit int_val'),
+    ("to_float", "to_float value tit var", "Converts string/integer value to floating-point number.", 'to_float "3.1415" tit float_val'),
+    ("lcontains", "lcontains list:item tit var", "Returns 1 if item exists in list, else 0.", 'lcontains scores:100 tit has_top'),
+    ("linsert", "linsert list:index:val", "Inserts value into list at specified index.", 'linsert queue:0:first_player'),
+    ("lslice", "lslice list:start:end tit var", "Extracts sublist slice from start to end index.", 'lslice inventory:0:3 tit hotbar'),
+    ("dhas", "dhas dict:key tit var", "Returns 1 if dictionary contains specified key, else 0.", 'dhas player:"level" tit has_level'),
+    ("ddel", "ddel dict:key", "Removes specified key from dictionary if present.", 'ddel player:"temp_buff"')
 ]
 
 class TrappyIDE:
     def __init__(self, root):
         self.root = root
-        self.root.title("Trappy IDE - Official Code Studio (v1.1.0 Patch)")
+        self.root.title("Trappy IDE - Official Code Studio (v1.15.0)")
         self.root.geometry("1060x730")
         self.root.configure(bg=BG_DARK)
 
@@ -208,7 +239,7 @@ class TrappyIDE:
 
         self.status = tk.Label(
             self.root,
-            text="Ready | Trappy v1.1.0 Patch | Discord: discord.gg/3chDfAPE9H | Press F1 for Docs, F5 to Run",
+            text="Ready | Trappy v1.15.0 | Discord: discord.gg/3chDfAPE9H | Press F1 for Docs, F5 to Run",
             bg=BG_SIDE,
             fg="#a1a1aa",
             font=("Consolas", 9),
@@ -547,7 +578,7 @@ class TrappyIDE:
         self._schedule_highlight()
 
         self.log("=====================================================================")
-        self.log("TRAPPY STUDIO IDE (v1.1.0 PATCH RELEASE)")
+        self.log("TRAPPY STUDIO IDE (v1.15.0 RELEASE)")
         self.log("Discord: https://discord.gg/3chDfAPE9H (Official Community Headquarters)")
         self.log("GitHub:  https://github.com/ashoccompany/Trappy")
         self.log("X:       https://x.com/tr4ppyai")

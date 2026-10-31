@@ -1,0 +1,113 @@
+# Trappy v1.15 Bootstrapping Foundation (v2 Self-Hosting Target)
+# Lexer and Tokenizer written 100% in Trappy language.
+
+fn tokenize_trappy src
+    dict tit res
+    lst 0 eq token_types
+    lst 0 eq token_values
+    lpop token_types tit dummy1
+    lpop token_values tit dummy2
+
+    slen src tit length
+    mh 0 eq pos
+
+    while pos < length
+        sget src:pos tit ch
+        ord ch tit code
+
+        # Skip whitespace: space(32), newline(10), cr(13), tab(9)
+        ifr code == 32
+            mh pos + 1 eq pos
+        else
+            ifr code == 10
+                mh pos + 1 eq pos
+            else
+                ifr code == 13
+                    mh pos + 1 eq pos
+                else
+                    ifr code == 9
+                        mh pos + 1 eq pos
+                    else
+                        # Comments starting with '#' (code 35)
+                        ifr code == 35
+                            while pos < length
+                                sget src:pos tit cch
+                                ord cch tit ccode
+                                ifr ccode == 10
+                                    break
+                                tren
+                                mh pos + 1 eq pos
+                            tren
+                        else
+                            # String literal starting with '"' (code 34)
+                            ifr code == 34
+                                mh pos + 1 eq pos
+                                mh pos eq s_start
+                                while pos < length
+                                    sget src:pos tit sch
+                                    ord sch tit scode
+                                    ifr scode == 34
+                                        break
+                                    tren
+                                    mh pos + 1 eq pos
+                                tren
+                                ssub src:s_start:pos tit s_val
+                                lpush token_types:"STR"
+                                lpush token_values:s_val
+                                mh pos + 1 eq pos
+                            else
+                                # Numeric literal (digits)
+                                is_digit ch tit is_d
+                                ifr is_d == 1
+                                    mh pos eq n_start
+                                    while pos < length
+                                        sget src:pos tit nch
+                                        is_digit nch tit nd_flag
+                                        ifr nd_flag == 1
+                                            mh pos + 1 eq pos
+                                        else
+                                            break
+                                        tren
+                                    tren
+                                    ssub src:n_start:pos tit n_str
+                                    to_num n_str tit n_val
+                                    lpush token_types:"NUM"
+                                    lpush token_values:n_val
+                                else
+                                    # Identifier or keyword
+                                    is_alpha ch tit is_a
+                                    ifr is_a == 1
+                                        mh pos eq id_start
+                                        while pos < length
+                                            sget src:pos tit idch
+                                            is_alpha idch tit a_flag
+                                            is_digit idch tit d_flag
+                                            mh a_flag + d_flag eq valid_flag
+                                            ifr valid_flag > 0
+                                                mh pos + 1 eq pos
+                                            else
+                                                break
+                                            tren
+                                        tren
+                                        ssub src:id_start:pos tit id_str
+                                        lpush token_types:"NAME"
+                                        lpush token_values:id_str
+                                    else
+                                        # Punctuation / Operator
+                                        lpush token_types:ch
+                                        lpush token_values:ch
+                                        mh pos + 1 eq pos
+                                    tren
+                                tren
+                            tren
+                        tren
+                    tren
+                tren
+            tren
+        tren
+    tren
+
+    dset res:"types":token_types
+    dset res:"values":token_values
+    return res
+tren

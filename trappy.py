@@ -22,7 +22,7 @@ try:
 except ImportError:
     winsound = None
 
-__version__ = "1.1.0"
+__version__ = "1.15.0"
 
 class VirtualLoopbackSocket:
     _channels = {}
@@ -73,8 +73,11 @@ class ReturnSignal(Exception):
         self.value = value
 
 class BreakSignal(Exception):
-    def __init__(self, loop_type):
+    def __init__(self, loop_type="all"):
         self.loop_type = loop_type
+
+class ContinueSignal(Exception):
+    pass
 
 def sanitize_path(filename, base_dir=None):
     if base_dir is None:
@@ -117,7 +120,13 @@ def tokenize(code):
         "lst", "lget", "lset", "llen", "lpush", "lpop",
         "file_write", "file_read", "file_append", "file_exists", "file_delete", "dir_list",
         "ifr", "then", "else", "grt", "lss", "sm", "exst", "exist",
-        "rep", "loop", "srep", "sloop", "txt", "tit", "inf", "ath",
+        "rep", "loop", "srep", "sloop", "while", "swhile", "break", "continue", "cnt",
+        "try", "catch", "fn", "func", "return",
+        "slen", "sget", "ssub", "ssplit", "sjoin", "sfind", "sreplace", "strim", "slower", "supper",
+        "ord", "chr", "is_digit", "is_alpha",
+        "type_of", "to_str", "to_num", "to_int", "to_float",
+        "dhas", "ddel", "lcontains", "linsert", "lslice",
+        "txt", "tit", "inf", "ath",
         "add_var", "add_func", "add_obj", "add_type", "spawn", "as",
         "cwin", "swin", "sbgwin", "label", "regle", "circ", "line",
         "cube3d", "line3d", "point3d", "sphere3d", "pyramid3d",
@@ -179,7 +188,7 @@ def tokenize(code):
             i += 2
             continue
 
-        if c in "():+=|,><":
+        if c in "():+=|,><*/%":
             tokens.append(Token(c, c, line))
             i += 1
             continue
@@ -318,7 +327,38 @@ class Parser:
             "SLOOP": self._parse_sloop,
             "TXT": self._parse_txt,
             "LST": self._parse_lst,
-            "MH": self._parse_mh
+            "MH": self._parse_mh,
+            "SLEN": self._parse_slen,
+            "SGET": self._parse_sget,
+            "SSUB": self._parse_ssub,
+            "SSPLIT": self._parse_ssplit,
+            "SJOIN": self._parse_sjoin,
+            "SFIND": self._parse_sfind,
+            "SREPLACE": self._parse_sreplace,
+            "STRIM": self._parse_strim,
+            "SLOWER": self._parse_slower,
+            "SUPPER": self._parse_supper,
+            "ORD": self._parse_ord,
+            "CHR": self._parse_chr,
+            "IS_DIGIT": self._parse_is_digit,
+            "IS_ALPHA": self._parse_is_alpha,
+            "TYPE_OF": self._parse_type_of,
+            "TO_STR": self._parse_to_str,
+            "TO_NUM": self._parse_to_num,
+            "TO_INT": self._parse_to_num,
+            "TO_FLOAT": self._parse_to_float,
+            "LCONTAINS": self._parse_lcontains,
+            "LINSERT": self._parse_linsert,
+            "LSLICE": self._parse_lslice,
+            "DHAS": self._parse_dhas,
+            "DDEL": self._parse_ddel,
+            "WHILE": self._parse_while,
+            "SWHILE": self._parse_swhile,
+            "BREAK": self._parse_break,
+            "CONTINUE": self._parse_continue,
+            "CNT": self._parse_continue,
+            "TRY": self._parse_try,
+            "RETURN": self._parse_return
         }
 
     def peek(self):
@@ -330,6 +370,31 @@ class Parser:
             raise TrappyError(f"Expected '{expected_kind}', but got '{tok.val}'", tok.line)
         self.pos += 1
         return tok
+
+    def consume_tit_or_eq(self):
+        tok = self.peek()
+        if tok.kind in ("TIT", "EQ", "="):
+            return self.consume(tok.kind).val
+        raise TrappyError(f"Expected 'tit' or 'eq', but got '{tok.val}'", tok.line)
+
+    def parse_condition(self):
+        left = self.parse_atom()
+        cmp_tokens = ("GRT", "LSS", "SM", "EQ", "==", "!=", ">", "<", ">=", "<=")
+        if self.peek().kind in cmp_tokens:
+            op_tok = self.consume(self.peek().kind)
+            op = op_tok.val.lower() if isinstance(op_tok.val, str) else op_tok.val
+            right = self.parse_atom()
+            return ("COND", op, left, right)
+        elif self.peek().kind in ("NUM", "STR", "NAME", "("):
+            right = self.parse_atom()
+            if self.peek().kind in cmp_tokens:
+                op_tok = self.consume(self.peek().kind)
+                op = op_tok.val.lower() if isinstance(op_tok.val, str) else op_tok.val
+                return ("COND", op, left, right)
+            else:
+                raise TrappyError(f"Condition missing comparison operator, got '{self.peek().val}'", self.peek().line)
+        else:
+            return ("COND", "!=", left, ("NUM", 0))
 
     def parse_program(self):
         self.consume("TRST")
@@ -921,21 +986,7 @@ class Parser:
                 self.consume("TREN")
                 return ("KEY_CHECK", key_name, is_flkey, body, tok.line)
 
-        left = self.parse_atom()
-        cmp_tokens = ("GRT", "LSS", "SM", "EQ", "==", "!=", ">", "<", ">=", "<=")
-
-        if self.peek().kind in cmp_tokens:
-            op_tok = self.consume(self.peek().kind)
-            op = op_tok.val.lower() if isinstance(op_tok.val, str) else op_tok.val
-            right = self.parse_atom()
-        else:
-            right = self.parse_atom()
-            if self.peek().kind not in cmp_tokens:
-                raise TrappyError("Condition missing comparison ('grt', 'lss', 'sm', 'eq', '==', '!=', '>', '<')", self.peek().line)
-            op_tok = self.consume(self.peek().kind)
-            op = op_tok.val.lower() if isinstance(op_tok.val, str) else op_tok.val
-
-        condition = ("COND", op, left, right)
+        condition = self.parse_condition()
 
         if self.peek().kind == "THEN":
             self.consume("THEN")
@@ -1005,7 +1056,7 @@ class Parser:
         while self.peek().kind == "|":
             self.consume("|")
             items.append(self.parse_atom())
-        self.consume("EQ")
+        self.consume_tit_or_eq()
         var_name = self.consume("NAME").val
         return ("ASSIGN_LIST", var_name, items, tok.line)
 
@@ -1016,8 +1067,237 @@ class Parser:
         target = self.parse_target_lvalue()
         return ("ASSIGN_TARGET", target, expr, tok.line)
 
+    def _parse_slen(self, tok):
+        self.consume("SLEN")
+        str_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("SLEN", str_expr, dest, tok.line)
+
+    def _parse_sget(self, tok):
+        self.consume("SGET")
+        str_expr = self.parse_expr()
+        self.consume(":")
+        idx_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("SGET", str_expr, idx_expr, dest, tok.line)
+
+    def _parse_ssub(self, tok):
+        self.consume("SSUB")
+        str_expr = self.parse_expr()
+        self.consume(":")
+        start_expr = self.parse_expr()
+        self.consume(":")
+        end_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("SSUB", str_expr, start_expr, end_expr, dest, tok.line)
+
+    def _parse_ssplit(self, tok):
+        self.consume("SSPLIT")
+        str_expr = self.parse_expr()
+        self.consume(":")
+        delim_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("SSPLIT", str_expr, delim_expr, dest, tok.line)
+
+    def _parse_sjoin(self, tok):
+        self.consume("SJOIN")
+        list_expr = self.parse_expr()
+        self.consume(":")
+        delim_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("SJOIN", list_expr, delim_expr, dest, tok.line)
+
+    def _parse_sfind(self, tok):
+        self.consume("SFIND")
+        str_expr = self.parse_expr()
+        self.consume(":")
+        needle_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("SFIND", str_expr, needle_expr, dest, tok.line)
+
+    def _parse_sreplace(self, tok):
+        self.consume("SREPLACE")
+        str_expr = self.parse_expr()
+        self.consume(":")
+        old_expr = self.parse_expr()
+        self.consume(":")
+        new_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("SREPLACE", str_expr, old_expr, new_expr, dest, tok.line)
+
+    def _parse_strim(self, tok):
+        self.consume("STRIM")
+        str_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("STRIM", str_expr, dest, tok.line)
+
+    def _parse_slower(self, tok):
+        self.consume("SLOWER")
+        str_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("SLOWER", str_expr, dest, tok.line)
+
+    def _parse_supper(self, tok):
+        self.consume("SUPPER")
+        str_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("SUPPER", str_expr, dest, tok.line)
+
+    def _parse_ord(self, tok):
+        self.consume("ORD")
+        char_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("ORD", char_expr, dest, tok.line)
+
+    def _parse_chr(self, tok):
+        self.consume("CHR")
+        code_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("CHR", code_expr, dest, tok.line)
+
+    def _parse_is_digit(self, tok):
+        self.consume("IS_DIGIT")
+        str_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("IS_DIGIT", str_expr, dest, tok.line)
+
+    def _parse_is_alpha(self, tok):
+        self.consume("IS_ALPHA")
+        str_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("IS_ALPHA", str_expr, dest, tok.line)
+
+    def _parse_type_of(self, tok):
+        self.consume("TYPE_OF")
+        expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("TYPE_OF", expr, dest, tok.line)
+
+    def _parse_to_str(self, tok):
+        self.consume("TO_STR")
+        expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("TO_STR", expr, dest, tok.line)
+
+    def _parse_to_num(self, tok):
+        self.consume(tok.kind)
+        expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("TO_NUM", expr, dest, tok.line)
+
+    def _parse_to_float(self, tok):
+        self.consume("TO_FLOAT")
+        expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("TO_FLOAT", expr, dest, tok.line)
+
+    def _parse_lcontains(self, tok):
+        self.consume("LCONTAINS")
+        list_expr = self.parse_expr()
+        self.consume(":")
+        item_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("LCONTAINS", list_expr, item_expr, dest, tok.line)
+
+    def _parse_linsert(self, tok):
+        self.consume("LINSERT")
+        list_name = self.consume("NAME").val
+        self.consume(":")
+        idx_expr = self.parse_expr()
+        self.consume(":")
+        val_expr = self.parse_expr()
+        return ("LINSERT", list_name, idx_expr, val_expr, tok.line)
+
+    def _parse_lslice(self, tok):
+        self.consume("LSLICE")
+        list_name = self.consume("NAME").val
+        self.consume(":")
+        start_expr = self.parse_expr()
+        self.consume(":")
+        end_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("LSLICE", list_name, start_expr, end_expr, dest, tok.line)
+
+    def _parse_dhas(self, tok):
+        self.consume("DHAS")
+        dict_name = self.consume("NAME").val
+        self.consume(":")
+        key_expr = self.parse_expr()
+        self.consume_tit_or_eq()
+        dest = self.parse_target_lvalue()
+        return ("DHAS", dict_name, key_expr, dest, tok.line)
+
+    def _parse_ddel(self, tok):
+        self.consume("DDEL")
+        dict_name = self.consume("NAME").val
+        self.consume(":")
+        key_expr = self.parse_expr()
+        return ("DDEL", dict_name, key_expr, tok.line)
+
+    def _parse_while(self, tok):
+        self.consume("WHILE")
+        cond = self.parse_condition()
+        body = []
+        while self.peek().kind not in ("TREN", "EOF"):
+            body.append(self.parse_statement())
+        self.consume("TREN")
+        return ("WHILE_LOOP", cond, body, tok.line)
+
+    def _parse_swhile(self, tok):
+        self.consume("SWHILE")
+        return ("BREAK_WHILE", tok.line)
+
+    def _parse_break(self, tok):
+        self.consume("BREAK")
+        return ("BREAK_ALL", tok.line)
+
+    def _parse_continue(self, tok):
+        self.consume(tok.kind)
+        return ("CONTINUE_LOOP", tok.line)
+
+    def _parse_try(self, tok):
+        self.consume("TRY")
+        try_body = []
+        while self.peek().kind not in ("CATCH", "TREN", "EOF"):
+            try_body.append(self.parse_statement())
+        err_var = None
+        catch_body = []
+        if self.peek().kind == "CATCH":
+            self.consume("CATCH")
+            if self.peek().kind == "NAME":
+                err_var = self.consume("NAME").val
+            while self.peek().kind not in ("TREN", "EOF"):
+                catch_body.append(self.parse_statement())
+        self.consume("TREN")
+        return ("TRY_CATCH", try_body, err_var, catch_body, tok.line)
+
+    def _parse_return(self, tok):
+        self.consume("RETURN")
+        expr = self.parse_expr()
+        return ("RETURN", expr, tok.line)
+
     def _parse_function_or_call(self, tok):
-        fn_prefixes = ("FMH", "FTXT", "F3D", "FOS", "FCLI", "FUI", "FLIST", "FREP", "FLOOP", "FGUI", "FDRW", "FGFX", "FCAN", "FWEB", "FAPP")
+        fn_prefixes = ("FMH", "FTXT", "F3D", "FOS", "FCLI", "FUI", "FLIST", "FREP", "FLOOP", "FGUI", "FDRW", "FGFX", "FCAN", "FWEB", "FAPP", "FN", "FUNC")
         if tok.kind in fn_prefixes:
             self.consume(tok.kind)
             fn_name = self.consume("NAME").val
@@ -1038,8 +1318,8 @@ class Parser:
             self.consume("TREN")
             return ("FN_DEF", fn_name, params, body, tok.line)
 
-        if tok.kind == "ANSW":
-            self.consume("ANSW")
+        if tok.kind in ("ANSW", "RETURN"):
+            self.consume(tok.kind)
             expr = self.parse_expr()
             return ("RETURN", expr, tok.line)
 
@@ -1078,6 +1358,10 @@ class Parser:
                     while self.peek().kind == ":":
                         self.consume(":")
                         args.append(self.parse_atom())
+                if self.peek().kind in ("TIT", "EQ", "="):
+                    self.consume(self.peek().kind)
+                    dest = self.parse_target_lvalue()
+                    return ("ASSIGN_TARGET", dest, ("CALL", name, args, tok.line), tok.line)
                 return ("CALL", name, args, tok.line)
 
             if self.peek().kind == ".":
@@ -1097,6 +1381,10 @@ class Parser:
                 while self.peek().kind == ":":
                     self.consume(":")
                     args.append(self.parse_atom())
+                if self.peek().kind in ("TIT", "EQ", "="):
+                    self.consume(self.peek().kind)
+                    dest = self.parse_target_lvalue()
+                    return ("ASSIGN_TARGET", dest, ("CALL", name, args, tok.line), tok.line)
                 return ("CALL", name, args, tok.line)
 
         raise TrappyError(f"Unexpected command '{tok.val}'", tok.line)
@@ -1151,6 +1439,16 @@ class Parser:
                 self.consume(".")
                 prop = self.consume("NAME").val
                 return ("DOT", name, prop, tok.line)
+            if self.peek().kind == "(":
+                self.consume("(")
+                args = []
+                if self.peek().kind != ")":
+                    args.append(self.parse_expr())
+                    while self.peek().kind == ":":
+                        self.consume(":")
+                        args.append(self.parse_expr())
+                self.consume(")")
+                return ("CALL", name, args, tok.line)
             return ("VAR", name, tok.line)
 
         raise TrappyError(f"Expected number or coordinate variable, got '{tok.val}'", tok.line)
@@ -1165,7 +1463,7 @@ class Parser:
 
     def parse_term(self):
         node = self.parse_factor()
-        while self.peek().kind in ("MULTI", "DIV"):
+        while self.peek().kind in ("MULTI", "DIV", "*", "/", "%"):
             op = self.consume(self.peek().kind).val
             right = self.parse_factor()
             node = ("BINOP", op, node, right)
@@ -1272,6 +1570,16 @@ class Parser:
                 self.consume(".")
                 prop = self.consume("NAME").val
                 return ("DOT", name, prop, tok.line)
+            if self.peek().kind == "(":
+                self.consume("(")
+                args = []
+                if self.peek().kind != ")":
+                    args.append(self.parse_expr())
+                    while self.peek().kind == ":":
+                        self.consume(":")
+                        args.append(self.parse_expr())
+                self.consume(")")
+                return ("CALL", name, args, tok.line)
             return ("VAR", name, tok.line)
         if tok.kind == "(":
             self.consume("(")
@@ -1288,6 +1596,15 @@ class Environment:
 
     def declare(self, name):
         self.declared_vars.add(name)
+        if name not in self.vars:
+            self.vars[name] = 0
+
+    def has(self, name):
+        if name in self.vars:
+            return True
+        if self.parent:
+            return self.parent.has(name)
+        return False
 
     def get(self, name, line=None):
         if name in self.vars:
@@ -1297,6 +1614,12 @@ class Environment:
         raise TrappyError(f"'{name}' was wiped out or never created!", line)
 
     def set(self, name, val):
+        curr = self
+        while curr is not None:
+            if name in curr.vars:
+                curr.vars[name] = val
+                return
+            curr = curr.parent
         self.vars[name] = val
 
     def get_dot(self, obj_name, prop_name, line=None):
@@ -1446,7 +1769,35 @@ class TrappyInterpreter:
             "BREAK_REP": self._eval_break_rep,
             "BREAK_LOOP": self._eval_break_loop,
             "PACK_DATA": self._eval_pack_data,
-            "UNPACK_DATA": self._eval_unpack_data
+            "UNPACK_DATA": self._eval_unpack_data,
+            "WHILE_LOOP": self._eval_while_loop,
+            "BREAK_WHILE": self._eval_break_while,
+            "BREAK_ALL": self._eval_break_all,
+            "CONTINUE_LOOP": self._eval_continue,
+            "TRY_CATCH": self._eval_try_catch,
+            "SLEN": self._eval_slen,
+            "SGET": self._eval_sget,
+            "SSUB": self._eval_ssub,
+            "SSPLIT": self._eval_ssplit,
+            "SJOIN": self._eval_sjoin,
+            "SFIND": self._eval_sfind,
+            "SREPLACE": self._eval_sreplace,
+            "STRIM": self._eval_strim,
+            "SLOWER": self._eval_slower,
+            "SUPPER": self._eval_supper,
+            "ORD": self._eval_ord,
+            "CHR": self._eval_chr,
+            "IS_DIGIT": self._eval_is_digit,
+            "IS_ALPHA": self._eval_is_alpha,
+            "TYPE_OF": self._eval_type_of,
+            "TO_STR": self._eval_to_str,
+            "TO_NUM": self._eval_to_num,
+            "TO_FLOAT": self._eval_to_float,
+            "LCONTAINS": self._eval_lcontains,
+            "LINSERT": self._eval_linsert,
+            "LSLICE": self._eval_lslice,
+            "DHAS": self._eval_dhas,
+            "DDEL": self._eval_ddel
         }
 
     def run(self, ast):
@@ -1477,6 +1828,253 @@ class TrappyInterpreter:
 
         self.gui.root.after(delay, self._schedule_game_frame)
 
+    def _set_target(self, target, val, env, line=0):
+        if isinstance(target, str):
+            env.set(target, val)
+        elif target[0] == "VAR_TARGET":
+            env.set(target[1], val)
+        elif target[0] == "DOT_TARGET":
+            _, obj_name, prop_name = target
+            env.set_dot(obj_name, prop_name, val, line)
+
+    def _eval_cond_bool(self, condition, env):
+        _, op, left_expr, right_expr = condition
+        left = self.eval_expr(left_expr, env)
+        right = self.eval_expr(right_expr, env)
+        if left is None and isinstance(right, (int, float)):
+            left = 0
+        if right is None and isinstance(left, (int, float)):
+            right = 0
+
+        op_clean = op.lower() if isinstance(op, str) else op
+
+        if op_clean in ("grt", ">"):
+            return (left > right)
+        elif op_clean in ("lss", "<"):
+            return (left < right)
+        elif op_clean in ("sm", "eq", "=="):
+            return (left == right)
+        elif op_clean in ("!=", "ne"):
+            return (left != right)
+        elif op_clean in (">=", "gte"):
+            return (left >= right)
+        elif op_clean in ("<=", "lte"):
+            return (left <= right)
+        return False
+
+    def _eval_slen(self, stmt, env):
+        _, str_expr, dest, line = stmt
+        s = str(self.eval_expr(str_expr, env))
+        self._set_target(dest, len(s), env, line)
+
+    def _eval_sget(self, stmt, env):
+        _, str_expr, idx_expr, dest, line = stmt
+        s = str(self.eval_expr(str_expr, env))
+        idx = int(self.eval_expr(idx_expr, env))
+        val = s[idx] if 0 <= idx < len(s) else ""
+        self._set_target(dest, val, env, line)
+
+    def _eval_ssub(self, stmt, env):
+        _, str_expr, start_expr, end_expr, dest, line = stmt
+        s = str(self.eval_expr(str_expr, env))
+        st = int(self.eval_expr(start_expr, env))
+        en = int(self.eval_expr(end_expr, env))
+        self._set_target(dest, s[st:en], env, line)
+
+    def _eval_ssplit(self, stmt, env):
+        _, str_expr, delim_expr, dest, line = stmt
+        s = str(self.eval_expr(str_expr, env))
+        delim = str(self.eval_expr(delim_expr, env))
+        res = list(s) if delim == "" else s.split(delim)
+        self._set_target(dest, res, env, line)
+
+    def _eval_sjoin(self, stmt, env):
+        _, list_expr, delim_expr, dest, line = stmt
+        lst = self.eval_expr(list_expr, env)
+        delim = str(self.eval_expr(delim_expr, env))
+        if isinstance(lst, list):
+            res = delim.join(str(x) for x in lst)
+        else:
+            res = str(lst)
+        self._set_target(dest, res, env, line)
+
+    def _eval_sfind(self, stmt, env):
+        _, str_expr, needle_expr, dest, line = stmt
+        s = str(self.eval_expr(str_expr, env))
+        needle = str(self.eval_expr(needle_expr, env))
+        self._set_target(dest, s.find(needle), env, line)
+
+    def _eval_sreplace(self, stmt, env):
+        _, str_expr, old_expr, new_expr, dest, line = stmt
+        s = str(self.eval_expr(str_expr, env))
+        old = str(self.eval_expr(old_expr, env))
+        new = str(self.eval_expr(new_expr, env))
+        self._set_target(dest, s.replace(old, new), env, line)
+
+    def _eval_strim(self, stmt, env):
+        _, str_expr, dest, line = stmt
+        s = str(self.eval_expr(str_expr, env)).strip()
+        self._set_target(dest, s, env, line)
+
+    def _eval_slower(self, stmt, env):
+        _, str_expr, dest, line = stmt
+        s = str(self.eval_expr(str_expr, env)).lower()
+        self._set_target(dest, s, env, line)
+
+    def _eval_supper(self, stmt, env):
+        _, str_expr, dest, line = stmt
+        s = str(self.eval_expr(str_expr, env)).upper()
+        self._set_target(dest, s, env, line)
+
+    def _eval_ord(self, stmt, env):
+        _, char_expr, dest, line = stmt
+        s = str(self.eval_expr(char_expr, env))
+        code = ord(s[0]) if len(s) > 0 else 0
+        self._set_target(dest, code, env, line)
+
+    def _eval_chr(self, stmt, env):
+        _, code_expr, dest, line = stmt
+        c = int(self.eval_expr(code_expr, env))
+        val = chr(c) if 0 <= c <= 0x10ffff else ""
+        self._set_target(dest, val, env, line)
+
+    def _eval_is_digit(self, stmt, env):
+        _, str_expr, dest, line = stmt
+        s = str(self.eval_expr(str_expr, env))
+        self._set_target(dest, 1 if (len(s) > 0 and s.isdigit()) else 0, env, line)
+
+    def _eval_is_alpha(self, stmt, env):
+        _, str_expr, dest, line = stmt
+        s = str(self.eval_expr(str_expr, env))
+        self._set_target(dest, 1 if (len(s) > 0 and all(ch.isalpha() or ch == "_" for ch in s)) else 0, env, line)
+
+    def _eval_type_of(self, stmt, env):
+        _, expr, dest, line = stmt
+        val = self.eval_expr(expr, env)
+        if isinstance(val, bool):
+            t = "bool"
+        elif isinstance(val, (int, float)):
+            t = "number"
+        elif isinstance(val, str):
+            t = "string"
+        elif isinstance(val, list):
+            t = "list"
+        elif isinstance(val, dict):
+            t = "dict"
+        elif val is None:
+            t = "nil"
+        else:
+            t = "unknown"
+        self._set_target(dest, t, env, line)
+
+    def _eval_to_str(self, stmt, env):
+        _, expr, dest, line = stmt
+        val = str(self.eval_expr(expr, env))
+        self._set_target(dest, val, env, line)
+
+    def _eval_to_num(self, stmt, env):
+        _, expr, dest, line = stmt
+        val = self.eval_expr(expr, env)
+        try:
+            res = int(float(val)) if isinstance(val, (str, float)) else int(val)
+        except (ValueError, TypeError):
+            res = 0
+        self._set_target(dest, res, env, line)
+
+    def _eval_to_float(self, stmt, env):
+        _, expr, dest, line = stmt
+        val = self.eval_expr(expr, env)
+        try:
+            res = float(val)
+        except (ValueError, TypeError):
+            res = 0.0
+        self._set_target(dest, res, env, line)
+
+    def _eval_lcontains(self, stmt, env):
+        _, list_expr, item_expr, dest, line = stmt
+        lst = self.eval_expr(list_expr, env)
+        it = self.eval_expr(item_expr, env)
+        if isinstance(lst, list):
+            res = 1 if it in lst else 0
+        elif isinstance(lst, str):
+            res = 1 if str(it) in lst else 0
+        else:
+            res = 0
+        self._set_target(dest, res, env, line)
+
+    def _eval_linsert(self, stmt, env):
+        _, list_name, idx_expr, val_expr, line = stmt
+        lst = env.get(list_name, line)
+        if isinstance(lst, list):
+            idx = int(self.eval_expr(idx_expr, env))
+            val = self.eval_expr(val_expr, env)
+            lst.insert(idx, val)
+        else:
+            raise TrappyError(f"'{list_name}' is not a list!", line)
+
+    def _eval_lslice(self, stmt, env):
+        _, list_name, start_expr, end_expr, dest, line = stmt
+        lst = env.get(list_name, line)
+        if isinstance(lst, list):
+            st = int(self.eval_expr(start_expr, env))
+            en = int(self.eval_expr(end_expr, env))
+            self._set_target(dest, lst[st:en], env, line)
+        else:
+            raise TrappyError(f"'{list_name}' is not a list!", line)
+
+    def _eval_dhas(self, stmt, env):
+        _, dict_name, key_expr, dest, line = stmt
+        d = env.get(dict_name, line)
+        if isinstance(d, dict):
+            k = str(self.eval_expr(key_expr, env))
+            self._set_target(dest, 1 if k in d else 0, env, line)
+        else:
+            raise TrappyError(f"'{dict_name}' is not a dictionary!", line)
+
+    def _eval_ddel(self, stmt, env):
+        _, dict_name, key_expr, line = stmt
+        d = env.get(dict_name, line)
+        if isinstance(d, dict):
+            k = str(self.eval_expr(key_expr, env))
+            if k in d:
+                del d[k]
+        else:
+            raise TrappyError(f"'{dict_name}' is not a dictionary!", line)
+
+    def _eval_while_loop(self, stmt, env):
+        _, condition, body, _ = stmt
+        while self._eval_cond_bool(condition, env):
+            try:
+                for s in body:
+                    self.eval_stmt(s, env)
+            except BreakSignal as b:
+                if b.loop_type in ("while", "swhile", "all"):
+                    break
+                raise b
+            except ContinueSignal:
+                continue
+
+    def _eval_break_while(self, stmt, env):
+        raise BreakSignal("while")
+
+    def _eval_break_all(self, stmt, env):
+        raise BreakSignal("all")
+
+    def _eval_continue(self, stmt, env):
+        raise ContinueSignal()
+
+    def _eval_try_catch(self, stmt, env):
+        _, try_body, err_var, catch_body, line = stmt
+        try:
+            for s in try_body:
+                self.eval_stmt(s, env)
+        except (ReturnSignal, BreakSignal, ContinueSignal):
+            raise
+        except Exception as e:
+            if err_var:
+                env.set(err_var, str(e))
+            for s in catch_body:
+                self.eval_stmt(s, env)
     def eval_stmt(self, stmt, env):
         kind = stmt[0]
         handler = self._eval_dispatch.get(kind)
@@ -1826,7 +2424,7 @@ class TrappyInterpreter:
         _, url_expr, var_name, line = stmt
         url = str(self.eval_expr(url_expr, env))
         try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'TrappyRuntime/1.1'})
+            req = urllib.request.Request(url, headers={'User-Agent': 'TrappyRuntime/1.15'})
             with urllib.request.urlopen(req, timeout=3.0) as resp:
                 data = resp.read().decode('utf-8', errors='ignore')
                 env.set(var_name, data)
@@ -1844,7 +2442,7 @@ class TrappyInterpreter:
             else:
                 post_data = str(data_raw).encode('utf-8')
                 content_type = 'text/plain'
-            req = urllib.request.Request(url, data=post_data, headers={'User-Agent': 'TrappyRuntime/1.1', 'Content-Type': content_type}, method='POST')
+            req = urllib.request.Request(url, data=post_data, headers={'User-Agent': 'TrappyRuntime/1.15', 'Content-Type': content_type}, method='POST')
             with urllib.request.urlopen(req, timeout=3.0) as resp:
                 data = resp.read().decode('utf-8', errors='ignore')
                 env.set(var_name, data)
@@ -1856,7 +2454,7 @@ class TrappyInterpreter:
         url = str(self.eval_expr(url_expr, env))
         safe_path = sanitize_path(file_path)
         try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'TrappyRuntime/1.1'})
+            req = urllib.request.Request(url, headers={'User-Agent': 'TrappyRuntime/1.15'})
             with urllib.request.urlopen(req, timeout=10.0) as resp:
                 with open(safe_path, "wb") as f:
                     f.write(resp.read())
@@ -2014,7 +2612,7 @@ class TrappyInterpreter:
         status = 0
         try:
             payload = json.dumps({"content": msg}).encode("utf-8")
-            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json", "User-Agent": "TrappyDiscord/1.1"}, method="POST")
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json", "User-Agent": "TrappyDiscord/1.15"}, method="POST")
             with urllib.request.urlopen(req, timeout=3.0) as resp:
                 status = resp.status
         except urllib.error.HTTPError as he:
@@ -2224,40 +2822,17 @@ class TrappyInterpreter:
                     for s in body:
                         self.eval_stmt(s, env)
                 except BreakSignal as b:
-                    if b.loop_type in ("sloop", "srep"):
+                    if b.loop_type in ("sloop", "srep", "each", "all"):
                         break
                     raise b
+                except ContinueSignal:
+                    continue
         else:
             raise TrappyError(f"'{list_var}' is not a list to loop over!", line)
 
     def _eval_if_stmt(self, stmt, env):
         _, condition, then_body, else_body, _ = stmt
-        _, op, left_expr, right_expr = condition
-        left = self.eval_expr(left_expr, env)
-        right = self.eval_expr(right_expr, env)
-
-        if left is None and isinstance(right, (int, float)):
-            left = 0
-        if right is None and isinstance(left, (int, float)):
-            right = 0
-
-        is_true = False
-        op_clean = op.lower() if isinstance(op, str) else op
-
-        if op_clean in ("grt", ">"):
-            is_true = (left > right)
-        elif op_clean in ("lss", "<"):
-            is_true = (left < right)
-        elif op_clean in ("sm", "eq", "=="):
-            is_true = (left == right)
-        elif op_clean in ("!=", "ne"):
-            is_true = (left != right)
-        elif op_clean in (">=", "gte"):
-            is_true = (left >= right)
-        elif op_clean in ("<=", "lte"):
-            is_true = (left <= right)
-
-        if is_true:
+        if self._eval_cond_bool(condition, env):
             for s in then_body:
                 self.eval_stmt(s, env)
         elif else_body:
@@ -2283,9 +2858,11 @@ class TrappyInterpreter:
                 for s in body:
                     self.eval_stmt(s, env)
             except BreakSignal as b:
-                if b.loop_type == "srep":
+                if b.loop_type in ("srep", "all"):
                     break
                 raise b
+            except ContinueSignal:
+                pass
             i += 1
 
     def _eval_infinite_loop(self, stmt, env):
@@ -2295,9 +2872,11 @@ class TrappyInterpreter:
                 for s in body:
                     self.eval_stmt(s, env)
             except BreakSignal as b:
-                if b.loop_type in ("sloop", "srep"):
+                if b.loop_type in ("sloop", "srep", "all"):
                     break
                 raise b
+            except ContinueSignal:
+                continue
 
     def _eval_break_rep(self, stmt, env):
         raise BreakSignal("srep")
@@ -2418,12 +2997,16 @@ class TrappyInterpreter:
                 return left + right
             elif op == "-":
                 return left - right
-            elif op == "multi":
+            elif op in ("multi", "*"):
                 return left * right
-            elif op == "div":
+            elif op in ("div", "/"):
                 if right == 0:
                     raise TrappyError("Division by zero", 0)
                 return left / right
+            elif op == "%":
+                if right == 0:
+                    raise TrappyError("Modulo by zero", 0)
+                return left % right
             elif op == "BAND":
                 return int(left) & int(right)
             elif op == "BOR":

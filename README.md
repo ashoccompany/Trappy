@@ -2,7 +2,7 @@
 
 Trappy is an independent, universal programming language built from scratch. Its guiding design law is simple: **simple needs to be simple**. Beginners can create working games, apps, and network clients immediately, while advanced creators can connect almost anything across the web and local systems without pages of configuration or third-party dependencies.
 
-Current version: **v1.1.0 (Advanced Performance & Architecture Patch)**
+Current version: **v1.15.0 (Bootstrapping Foundation & Stability Release)**
 
 ---
 
@@ -175,6 +175,16 @@ tpm list                            List installed packages
 * **v0.9.5:** Quick Code Assist autocomplete, 3D wireframe perspective, OS memory buffers, and extended math/physics library.
 * **v1.0.0 (Global Release):** Official global launch. Discord webhooks, offline loopback bus, dynamic dictionaries, list indexing, universal file I/O, 3D multi-shapes (sphere, pyramid), AABB collision, chiptune synthesizer, F1 in-IDE documentation browser, and ultra-budget hardware frame throttling.
 * **v1.1.0 (Advanced Patch):** Major architectural refactor and benchmark optimization. Decoupled 700+ line parser into modular O(1) dispatchers, added native float literals (`3.14`), introduced first-class `else` keyword syntax, optimized tokenizer slicing from O(n^2) to O(n), zero-latency non-blocking socket polling, and added an automated 24-test suite (`tests/test_trappy.py`).
+* **v1.15.0 (Bootstrapping Foundation & Stability Release):**
+  * **Self-Hosting Bootstrapping for v2:** Added pure-Trappy self-hosting lexer prototype (`bootstrap/trappy_bootstrap.trappy`) proving Trappy can tokenize itself.
+  * **Full String Suite:** Added `slen`, `sget`, `ssub`, `ssplit`, `sjoin`, `sfind`, `sreplace`, `strim`, `slower`, `supper`, `ord`, `chr`, `is_digit`, `is_alpha`.
+  * **Type Introspection & Reflection:** Added `type_of`, `to_str`, `to_num`, `to_float`.
+  * **Universal Functions:** Added first-class `fn` and `func` declaration keywords with `return` statement support and expression-level calling.
+  * **Modern Control Flow:** Added `while <cond> ... tren`, `break`, `continue` / `cnt`, `swhile`.
+  * **Exception Handling:** Added `try ... catch <err> ... tren` native exception recovery.
+  * **Collection Ergonomics:** Added `lcontains`, `linsert`, `lslice`, `dhas`, `ddel`.
+  * **32-Test Automated Suite:** Expanded automated test suite with 100% pass rate.
+* **v2.0.0 (Upcoming Self-Hosting Milestone):** Complete self-hosting bootstrap compiler where Trappy compiles and interprets itself natively without requiring the Python host runtime.
 
 ---
 

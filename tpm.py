@@ -28,7 +28,7 @@ def ensure_dirs():
                     "file": "packet_utils.trappy"
                 },
                 "physics_2d": {
-                    "version": "1.1.0",
+                    "version": "1.15.0",
                     "author": "TrappyGames",
                     "description": "Standard 2D velocity, gravity calculation, and box bounce physics",
                     "file": "physics_2d.trappy"
