@@ -10,6 +10,7 @@ import urllib.parse
 import json
 import subprocess
 import queue
+import hashlib
 
 try:
     import tkinter as tk
@@ -22,7 +23,7 @@ try:
 except ImportError:
     winsound = None
 
-__version__ = "1.15.0"
+__version__ = "1.5.0"
 
 class VirtualLoopbackSocket:
     _channels = {}
@@ -100,6 +101,698 @@ def validate_url(url, line=None):
         )
     return clean_url
 
+class TrappyOSKernel:
+    def __init__(self, interpreter=None):
+        self.interpreter = interpreter
+        self.is_booted = False
+        self.os_name = "TrappyOS"
+        self.version = "1.5.0"
+        self.boot_time = time.time()
+        self.current_ring = 0
+        self.active_pid = 1
+        self.active_app_id = "kernel"
+
+        self.next_pid = 2
+        self.processes = {
+            1: {
+                "pid": 1,
+                "name": "kernel_init",
+                "state": "RUNNING",
+                "ring": 0,
+                "memory_used": 1024,
+                "memory_limit": 64 * 1024 * 1024,
+                "permissions": {"ALL"},
+                "app_id": "kernel"
+            }
+        }
+        self.ipc_channels = {}
+
+        self.vfs = {
+            "/": {"type": "dir"},
+            "/sys": {"type": "dir"},
+            "/bin": {"type": "dir"},
+            "/etc": {"type": "dir"},
+            "/apps": {"type": "dir"},
+            "/storage": {"type": "dir"},
+            "/proc": {"type": "dir"},
+            "/var": {"type": "dir"},
+            "/var/log": {"type": "dir"},
+            "/etc/os-release": {"type": "file", "content": "NAME=TrappyOS\nVERSION=1.5.0\nID=trappy\n"},
+            "/etc/hostname": {"type": "file", "content": "trappy-node"},
+            "/sys/kernel": {"type": "file", "content": "TrappyKernel v1.5 Core"},
+            "/sys/security.conf": {"type": "file", "content": "ENFORCE=1\nCANARY=1\nNX=1\n"}
+        }
+
+        self.installed_apps = {}
+
+        self.settings = {
+            "os.name": "TrappyOS",
+            "os.version": "1.5.0",
+            "display.mode": "computer",
+            "display.orientation": "landscape",
+            "display.theme": "dark",
+            "display.scale": 1.0,
+            "security.jailbreak_defense": "block",
+            "security.exploit_guards": {
+                "canary": 1,
+                "nx_memory": 1,
+                "syscall_filter": 1,
+                "strict_bounds": 1
+            },
+            "network.online": 1,
+            "sound.volume": 80
+        }
+
+        self.screen_mode = "computer"
+        self.screen_orientation = "landscape"
+        self.screen_width = 1024
+        self.screen_height = 700
+        self.touch_state = {"type": "none", "x": 0, "y": 0}
+        self.battery = {"level": 100, "charging": 1, "voltage": 4.2, "health": "good"}
+
+        self.windows = []
+        self.taskbar = {"pos": "bottom", "color": "#1f1f23"}
+        self.notifications = []
+
+        self.integrity_seals = {}
+        self.jailbreak_events = []
+        self.exploit_events = []
+        self.app_permissions = {}
+        self.firewall_rules = {}
+        self.blocked_items = set()
+        self.custom_defense_hooks = {}
+
+        self._init_default_seals()
+
+    def _init_default_seals(self):
+        k_content = self.vfs.get("/sys/kernel", {}).get("content", "TrappyKernel v1.5 Core")
+        self.integrity_seals["/sys/kernel"] = (hashlib.sha256(k_content.encode("utf-8")).hexdigest(), "")
+        sec_conf = self.vfs.get("/sys/security.conf", {}).get("content", "")
+        self.integrity_seals["/sys/security.conf"] = (hashlib.sha256(sec_conf.encode("utf-8")).hexdigest(), "")
+
+    def boot(self, name, version):
+        self.is_booted = True
+        self.os_name = str(name)
+        self.version = str(version)
+        self.boot_time = time.time()
+        self.current_ring = 0
+        self.settings["os.name"] = self.os_name
+        self.settings["os.version"] = self.version
+        self.vfs["/etc/os-release"] = {
+            "type": "file",
+            "content": f"NAME={self.os_name}\nVERSION={self.version}\nID=trappy\n"
+        }
+        print(f"[TrappyOS Kernel]: Booting {self.os_name} v{self.version} (PID 1 Init)")
+        return self.is_booted
+
+    def shutdown(self):
+        self.is_booted = False
+        print("[TrappyOS Kernel]: Clean shutdown completed.")
+        return True
+
+    def panic(self, reason):
+        reason = str(reason)
+        event = {
+            "time": time.time(),
+            "reason": reason,
+            "pid": self.active_pid,
+            "ring": self.current_ring
+        }
+        self.jailbreak_events.append(event)
+        self.vfs["/var/log/panic.log"] = {
+            "type": "file",
+            "content": f"[KERNEL PANIC] {reason}\nPID: {self.active_pid}\nRing: {self.current_ring}\n"
+        }
+        print(f"[KERNEL PANIC]: {reason}")
+        print(f"  PID: {self.active_pid} | Ring: {self.current_ring}")
+        print(f"  Uptime: {round(time.time() - self.boot_time, 3)}s")
+        return event
+
+    def proc_spawn(self, name, code_str, perms=None):
+        pid = self.next_pid
+        self.next_pid += 1
+        perm_set = set(perms) if perms else {"UI", "STORAGE"}
+        self.processes[pid] = {
+            "pid": pid,
+            "name": str(name),
+            "state": "RUNNING",
+            "ring": 3,
+            "memory_used": 512,
+            "memory_limit": 16 * 1024 * 1024,
+            "permissions": perm_set,
+            "app_id": str(name),
+            "code": str(code_str)
+        }
+        return pid
+
+    def proc_kill(self, pid):
+        pid = int(pid)
+        if pid == 1:
+            print("[TrappyOS Alert]: Cannot terminate Kernel Init PID 1.")
+            return False
+        if pid in self.processes:
+            self.processes[pid]["state"] = "TERMINATED"
+            return True
+        return False
+
+    def proc_list(self):
+        return [
+            {
+                "pid": p["pid"],
+                "name": p["name"],
+                "state": p["state"],
+                "ring": p["ring"],
+                "memory_used": p["memory_used"],
+                "app_id": p.get("app_id", "")
+            }
+            for p in self.processes.values()
+        ]
+
+    def proc_yield(self):
+        time.sleep(0.001)
+        return True
+
+    def ipc_send(self, channel, data):
+        ch = str(channel)
+        if ch not in self.ipc_channels:
+            self.ipc_channels[ch] = []
+        self.ipc_channels[ch].append(data)
+        return len(self.ipc_channels[ch])
+
+    def ipc_recv(self, channel):
+        ch = str(channel)
+        if ch in self.ipc_channels and self.ipc_channels[ch]:
+            return self.ipc_channels[ch].pop(0)
+        return ""
+
+    def normalize_vfs_path(self, path):
+        path = str(path).replace("\\", "/").strip()
+        if not path.startswith("/"):
+            path = "/" + path
+        parts = []
+        for p in path.split("/"):
+            if not p or p == ".":
+                continue
+            if p == "..":
+                if parts:
+                    parts.pop()
+            else:
+                parts.append(p)
+        return "/" + "/".join(parts)
+
+    def vfs_mount(self, mount_point, backend_type="ram"):
+        norm = self.normalize_vfs_path(mount_point)
+        self.vfs[norm] = {"type": "dir", "backend": str(backend_type)}
+        return norm
+
+    def vfs_write(self, path, content):
+        norm_path = self.normalize_vfs_path(path)
+        if self.current_ring > 0 and (norm_path.startswith("/sys") or norm_path.startswith("/bin")):
+            self.jailbreak_events.append({
+                "type": "unauthorized_sys_write",
+                "path": norm_path,
+                "pid": self.active_pid,
+                "time": time.time()
+            })
+            raise TrappySecurityError(f"Permission denied: Ring {self.current_ring} cannot modify '{norm_path}'")
+        
+        content_str = str(content)
+        content_bytes = content_str.encode("utf-8", errors="ignore")
+        self.vfs[norm_path] = {
+            "type": "file",
+            "content": content_str,
+            "size": len(content_bytes),
+            "hash": hashlib.sha256(content_bytes).hexdigest()
+        }
+        return len(content_bytes)
+
+    def vfs_read(self, path):
+        norm_path = self.normalize_vfs_path(path)
+        if norm_path == "/proc/version":
+            return f"{self.os_name} {self.version} (Trappy Core)"
+        if norm_path == "/proc/uptime":
+            return f"{round(time.time() - self.boot_time, 2)}s"
+        if norm_path == "/proc/procs":
+            return str(len(self.processes))
+
+        if norm_path in self.vfs:
+            node = self.vfs[norm_path]
+            if node["type"] == "file":
+                return node.get("content", "")
+            return f"[DIR: {norm_path}]"
+        raise TrappyError(f"VFS file not found: '{norm_path}'")
+
+    def vfs_list(self, path):
+        norm_path = self.normalize_vfs_path(path)
+        prefix = norm_path if norm_path.endswith("/") else norm_path + "/"
+        if norm_path == "/":
+            prefix = "/"
+        
+        entries = set()
+        for k in self.vfs:
+            if k == norm_path:
+                continue
+            if norm_path == "/" and k.startswith("/"):
+                seg = k[1:].split("/")[0]
+                if seg:
+                    entries.add(seg)
+            elif k.startswith(prefix):
+                rem = k[len(prefix):]
+                seg = rem.split("/")[0]
+                if seg:
+                    entries.add(seg)
+        return sorted(list(entries))
+
+    def vfs_del(self, path):
+        norm_path = self.normalize_vfs_path(path)
+        if norm_path in ("/sys/kernel", "/sys/security.conf", "/"):
+            raise TrappySecurityError(f"Cannot delete protected system path '{norm_path}'")
+        if norm_path in self.vfs:
+            del self.vfs[norm_path]
+            return True
+        return False
+
+    def vfs_stat(self, path):
+        norm_path = self.normalize_vfs_path(path)
+        if norm_path in self.vfs:
+            item = self.vfs[norm_path]
+            return {
+                "path": norm_path,
+                "type": item["type"],
+                "size": item.get("size", len(item.get("content", ""))),
+                "hash": item.get("hash", "")
+            }
+        raise TrappyError(f"VFS file not found: '{norm_path}'")
+
+    def setting_set(self, key, value):
+        self.settings[str(key)] = value
+        return value
+
+    def setting_get(self, key, default=""):
+        return self.settings.get(str(key), default)
+
+    def setting_dump(self):
+        return dict(self.settings)
+
+    def app_install(self, app_id, code_str):
+        clean_id = str(app_id).strip()
+        if clean_id in self.blocked_items:
+            return {"status": "blocked", "error": f"App '{clean_id}' is on security blocklist"}
+        
+        try:
+            tokenize(str(code_str))
+        except Exception as e:
+            return {"status": "error", "error": f"Syntax verification failed: {e}"}
+
+        app_entry = {
+            "app_id": clean_id,
+            "name": clean_id,
+            "version": "1.0",
+            "code": str(code_str),
+            "permissions": {"UI", "STORAGE"},
+            "installed_at": time.time()
+        }
+        self.installed_apps[clean_id] = app_entry
+        self.vfs_write(f"/apps/{clean_id}/app.trappy", code_str)
+        return {"status": "ok", "app_id": clean_id}
+
+    def app_download(self, url, app_id):
+        clean_id = str(app_id).strip()
+        if clean_id in self.blocked_items:
+            return {"status": "blocked", "error": f"App '{clean_id}' is on security blocklist"}
+
+        safe_url = validate_url(str(url))
+        try:
+            req = urllib.request.Request(safe_url, headers={"User-Agent": "TrappyOSAppStore/1.5"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = resp.read().decode("utf-8", errors="ignore")
+            return self.app_install(clean_id, data)
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def app_launch(self, app_id):
+        clean_id = str(app_id).strip()
+        if clean_id not in self.installed_apps:
+            raise TrappyError(f"App '{clean_id}' is not installed in TrappyOS")
+        
+        app_info = self.installed_apps[clean_id]
+        pid = self.proc_spawn(clean_id, app_info["code"], app_info.get("permissions"))
+        prev_ring = self.current_ring
+        prev_app = self.active_app_id
+        prev_pid = self.active_pid
+        try:
+            self.current_ring = 3
+            self.active_app_id = clean_id
+            self.active_pid = pid
+            if self.interpreter:
+                sub_toks = tokenize(app_info["code"])
+                sub_parser = Parser(sub_toks)
+                sub_ast = sub_parser.parse_program()
+                app_env = Environment(parent=self.interpreter.global_env)
+                self.interpreter.eval_stmt(sub_ast, app_env)
+        finally:
+            self.current_ring = prev_ring
+            self.active_app_id = prev_app
+            self.active_pid = prev_pid
+        return pid
+
+    def app_list(self):
+        return [
+            {
+                "app_id": a["app_id"],
+                "name": a["name"],
+                "version": a["version"],
+                "installed_at": a["installed_at"]
+            }
+            for a in self.installed_apps.values()
+        ]
+
+    def app_kill(self, pid):
+        return self.proc_kill(pid)
+
+    def app_uninstall(self, app_id):
+        clean_id = str(app_id).strip()
+        if clean_id in self.installed_apps:
+            del self.installed_apps[clean_id]
+            try:
+                self.vfs_del(f"/apps/{clean_id}/app.trappy")
+            except Exception:
+                pass
+            return True
+        return False
+
+    def set_screen_mode(self, target, orientation="portrait"):
+        mode = str(target).lower().strip()
+        orient = str(orientation).lower().strip()
+
+        if mode in ("phone", "mobile"):
+            self.screen_mode = "phone"
+            self.screen_orientation = orient
+            if orient == "landscape":
+                self.screen_width = 720
+                self.screen_height = 380
+            else:
+                self.screen_width = 380
+                self.screen_height = 720
+        elif mode in ("tablet",):
+            self.screen_mode = "tablet"
+            self.screen_orientation = orient
+            if orient == "landscape":
+                self.screen_width = 1024
+                self.screen_height = 800
+            else:
+                self.screen_width = 800
+                self.screen_height = 1024
+        else:
+            self.screen_mode = "computer"
+            self.screen_orientation = orient or "landscape"
+            self.screen_width = 1024
+            self.screen_height = 700
+
+        self.settings["display.mode"] = self.screen_mode
+        self.settings["display.orientation"] = self.screen_orientation
+
+        if self.interpreter and getattr(self.interpreter, "gui", None) and self.interpreter.gui.root:
+            try:
+                self.interpreter.gui.root.geometry(f"{self.screen_width}x{self.screen_height}")
+                self.interpreter.gui.canvas.configure(width=self.screen_width, height=self.screen_height)
+            except Exception:
+                pass
+
+        return {
+            "mode": self.screen_mode,
+            "orientation": self.screen_orientation,
+            "width": self.screen_width,
+            "height": self.screen_height
+        }
+
+    def hw_info(self):
+        return {
+            "device_type": self.screen_mode,
+            "orientation": self.screen_orientation,
+            "screen_resolution": f"{self.screen_width}x{self.screen_height}",
+            "cpu": "Trappy Silicon v1.5 Virtual SoC (8 Cores)",
+            "ram_total_mb": 4096,
+            "ram_free_mb": 3120,
+            "battery": dict(self.battery),
+            "network": {
+                "status": "online" if self.settings.get("network.online") else "offline",
+                "type": "cellular_5g" if self.screen_mode == "phone" else "ethernet_gigabit"
+            },
+            "storage_total_mb": 65536,
+            "storage_free_mb": 58240,
+            "ring": self.current_ring
+        }
+
+    def battery_info(self):
+        return dict(self.battery)
+
+    def touch_event(self):
+        return dict(self.touch_state)
+
+    def ui_window(self, title, x, y, w, h):
+        win_id = f"win_{len(self.windows) + 1}"
+        win = {
+            "id": win_id,
+            "title": str(title),
+            "x": int(x),
+            "y": int(y),
+            "w": int(w),
+            "h": int(h),
+            "visible": True
+        }
+        self.windows.append(win)
+        return win_id
+
+    def ui_taskbar(self, pos, color):
+        self.taskbar = {"pos": str(pos), "color": str(color)}
+        return self.taskbar
+
+    def ui_notify(self, title, msg, level="info"):
+        notif = {
+            "title": str(title),
+            "msg": str(msg),
+            "level": str(level),
+            "time": time.time()
+        }
+        self.notifications.append(notif)
+        print(f"[TrappyOS Notification] [{level.upper()}]: {title} - {msg}")
+        return notif
+
+    def ui_render(self):
+        gui = getattr(self.interpreter, "gui", None) if self.interpreter else None
+        if not gui or not getattr(gui, "canvas", None):
+            return {"status": "ok", "mode": self.screen_mode, "rendered": False, "reason": "headless"}
+
+        canvas = gui.canvas
+        canvas.delete("all")
+        w = self.screen_width
+        h = self.screen_height
+
+        if self.screen_mode == "phone":
+            canvas.create_rectangle(8, 8, w - 8, h - 8, fill="#121214", outline="#27272a", width=3)
+            canvas.create_rectangle(14, 40, w - 14, h - 30, fill="#0f172a", outline="")
+            canvas.create_rectangle(w / 2 - 45, 14, w / 2 + 45, 32, fill="#000000", outline="#18181b")
+            canvas.create_oval(w / 2 + 25, 20, w / 2 + 33, 28, fill="#1e293b", outline="")
+            canvas.create_text(35, 24, text=time.strftime("%H:%M"), fill="#ffffff", font=("Segoe UI", 9, "bold"))
+            canvas.create_text(w - 55, 24, text=f"5G  {self.battery['level']}%", fill="#ffffff", font=("Segoe UI", 9, "bold"))
+            canvas.create_rectangle(w / 2 - 35, h - 18, w / 2 + 35, h - 14, fill="#ffffff", outline="")
+        else:
+            canvas.create_rectangle(0, 0, w, h, fill="#0a0a0c", outline="")
+            canvas.create_text(w / 2, h / 2 - 20, text=f"{self.os_name} v{self.version}", fill="#1e293b", font=("Consolas", 28, "bold"))
+            tb_h = 38
+            tb_y = h - tb_h if self.taskbar.get("pos") == "bottom" else 0
+            canvas.create_rectangle(0, tb_y, w, tb_y + tb_h, fill=self.taskbar.get("color", "#18181b"), outline="#27272a")
+            canvas.create_rectangle(6, tb_y + 5, 65, tb_y + tb_h - 5, fill="#06b6d4", outline="")
+            canvas.create_text(35, tb_y + tb_h / 2, text="START", fill="#000000", font=("Segoe UI", 8, "bold"))
+            canvas.create_text(w - 45, tb_y + tb_h / 2, text=time.strftime("%H:%M"), fill="#e4e4e7", font=("Segoe UI", 9))
+
+        for win in self.windows:
+            if win.get("visible"):
+                wx, wy, ww, wh = win["x"], win["y"], win["w"], win["h"]
+                canvas.create_rectangle(wx, wy, wx + ww, wy + wh, fill="#18181b", outline="#3f3f46", width=2)
+                canvas.create_rectangle(wx, wy, wx + ww, wy + 24, fill="#27272a", outline="")
+                canvas.create_text(wx + 10, wy + 12, text=win["title"], fill="#f4f4f5", font=("Segoe UI", 9, "bold"), anchor="w")
+                canvas.create_text(wx + ww - 15, wy + 12, text="X", fill="#ef4444", font=("Segoe UI", 9, "bold"))
+
+        if self.notifications:
+            latest = self.notifications[-1]
+            canvas.create_rectangle(w - 260, 20, w - 20, 75, fill="#1e293b", outline="#06b6d4", width=2)
+            canvas.create_text(w - 245, 35, text=latest["title"], fill="#38bdf8", font=("Segoe UI", 9, "bold"), anchor="w")
+            canvas.create_text(w - 245, 55, text=latest["msg"][:30], fill="#e2e8f0", font=("Segoe UI", 8), anchor="w")
+
+        return {"status": "ok", "mode": self.screen_mode, "rendered": True}
+
+    def integrity_seal(self, component_name, key=""):
+        comp = str(component_name)
+        k = str(key)
+        content = ""
+        if comp in self.vfs:
+            content = self.vfs[comp].get("content", "")
+        else:
+            content = comp
+        payload = (content + ":" + k) if k else content
+        seal = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        self.integrity_seals[comp] = (seal, k)
+        return seal
+
+    def integrity_verify(self, component_name, key=""):
+        comp = str(component_name)
+        if comp not in self.integrity_seals:
+            return 0
+        expected_hash, seal_key = self.integrity_seals[comp]
+        k = str(key) if key != "" else seal_key
+        content = ""
+        if comp in self.vfs:
+            content = self.vfs[comp].get("content", "")
+        else:
+            content = comp
+        payload = (content + ":" + k) if k else content
+        actual = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        if expected_hash == actual:
+            return 1
+        return 0
+
+    def jailbreak_check(self):
+        violations = []
+        for comp, seal_data in self.integrity_seals.items():
+            if isinstance(seal_data, tuple):
+                expected_hash, seal_key = seal_data
+            else:
+                expected_hash, seal_key = seal_data, ""
+            if comp in self.vfs:
+                content = self.vfs[comp].get("content", "")
+                payload = (content + ":" + seal_key) if seal_key else content
+                actual = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+                if actual != expected_hash:
+                    violations.append(f"Tampered system component: '{comp}'")
+            else:
+                violations.append(f"Missing core sealed component: '{comp}'")
+
+        for ev in self.jailbreak_events:
+            violations.append(f"Security event: {ev.get('type', 'violation')} on PID {ev.get('pid')}")
+
+        is_jailbroken = len(violations) > 0
+        report = {
+            "jailbroken": 1 if is_jailbroken else 0,
+            "status": "VIOLATION_DETECTED" if is_jailbroken else "SECURE",
+            "violations_count": len(violations),
+            "violations": violations,
+            "risk_score": min(100, len(violations) * 30),
+            "kernel_sealed": len(self.integrity_seals) > 0
+        }
+
+        action = self.settings.get("security.jailbreak_defense", "block")
+        if is_jailbroken:
+            if action == "panic":
+                self.panic("Automated Anti-Jailbreak defense triggered: System Integrity Compromise")
+            elif action == "isolate":
+                for p in self.processes.values():
+                    if p["pid"] != 1:
+                        p["state"] = "ISOLATED"
+        return report
+
+    def jailbreak_defend(self, action):
+        act = str(action).lower().strip()
+        self.settings["security.jailbreak_defense"] = act
+        return act
+
+    def exploit_guard(self, feature, state):
+        feat = str(feature).lower().strip()
+        val = int(state)
+        self.settings["security.exploit_guards"][feat] = val
+        return val
+
+    def exploit_status(self):
+        return {
+            "guards": dict(self.settings["security.exploit_guards"]),
+            "intercepted_count": len(self.exploit_events),
+            "events": list(self.exploit_events[-10:]),
+            "protection_level": "MAXIMUM"
+        }
+
+    def set_ring(self, ring):
+        r = int(ring)
+        if self.current_ring > 0 and r == 0:
+            self.jailbreak_events.append({
+                "type": "unauthorized_ring0_elevation",
+                "pid": self.active_pid,
+                "time": time.time()
+            })
+            raise TrappySecurityError("Anti-Jailbreak: Unauthorized Ring 0 elevation attempt blocked")
+        self.current_ring = r
+        return self.current_ring
+
+    def get_ring(self):
+        return self.current_ring
+
+    def perm_grant(self, app_id, perm):
+        aid = str(app_id).strip()
+        p = str(perm).upper().strip()
+        if aid not in self.app_permissions:
+            self.app_permissions[aid] = set()
+        self.app_permissions[aid].add(p)
+        return 1
+
+    def perm_revoke(self, app_id, perm):
+        aid = str(app_id).strip()
+        p = str(perm).upper().strip()
+        if aid in self.app_permissions:
+            self.app_permissions[aid].discard(p)
+        return 1
+
+    def perm_check(self, app_id, perm):
+        aid = str(app_id).strip()
+        p = str(perm).upper().strip()
+        if aid == "kernel":
+            return 1
+        perms = self.app_permissions.get(aid, set())
+        if "ALL" in perms or p in perms:
+            return 1
+        return 0
+
+    def firewall_rule(self, target, action):
+        t = str(target).strip()
+        a = str(action).lower().strip()
+        self.firewall_rules[t] = a
+        return a
+
+    def check_network_firewall(self, app_id, url):
+        aid = str(app_id).strip()
+        if aid == "kernel":
+            return True
+        if self.firewall_rules.get(aid) == "block":
+            return False
+        parsed = urllib.parse.urlparse(str(url))
+        domain = parsed.hostname or ""
+        if self.firewall_rules.get(domain) == "block":
+            return False
+        if not self.perm_check(aid, "NETWORK"):
+            return False
+        return True
+
+    def defense_hook(self, name, action):
+        self.custom_defense_hooks[str(name)] = str(action)
+        return action
+
+    def block_list(self, category, identifier):
+        self.blocked_items.add(str(identifier).strip())
+        return len(self.blocked_items)
+
+    def check_memory_bounds(self, buffer_id, offset, buffer_len, line=None):
+        guards = self.settings["security.exploit_guards"]
+        if guards.get("canary") or guards.get("strict_bounds"):
+            if offset < 0 or offset >= buffer_len:
+                self.exploit_events.append({
+                    "type": "buffer_overflow_attempt",
+                    "buffer_id": buffer_id,
+                    "offset": offset,
+                    "buffer_len": buffer_len,
+                    "pid": self.active_pid,
+                    "time": time.time()
+                })
+                raise TrappySecurityError(f"Anti-Exploit: Buffer boundary violation blocked at offset {offset}", line)
+
 class Token:
     def __init__(self, kind, val, line=0):
         self.kind = kind
@@ -145,7 +838,19 @@ def tokenize(code):
         "mem_alloc", "mem_write", "mem_read", "sys_exec", "sys_env",
         "btn", "inp", "psed", "changed", "gloop", "fps", "calm", "lock", "unlock",
         "key", "flkey", "mousel", "mouser", "mousesp", "collde", "collide",
-        "hrable", "play", "beep", "synth", "rnd", "write", "into", "each", "in"
+        "hrable", "play", "beep", "synth", "rnd", "write", "into", "each", "in",
+        "os_boot", "os_shutdown", "os_panic",
+        "os_proc_spawn", "os_proc_kill", "os_proc_list", "os_yield",
+        "os_ipc_send", "os_ipc_recv",
+        "os_vfs_mount", "os_vfs_write", "os_vfs_read", "os_vfs_list", "os_vfs_del", "os_vfs_stat",
+        "os_setting_set", "os_setting_get", "os_setting_dump",
+        "os_app_download", "os_app_install", "os_app_launch", "os_app_list", "os_app_kill", "os_app_uninstall",
+        "os_screen_mode", "os_hw_info", "os_battery_info", "os_touch_event",
+        "os_ui_window", "os_ui_taskbar", "os_ui_notify", "os_ui_render",
+        "os_integrity_seal", "os_integrity_verify", "os_jailbreak_check", "os_jailbreak_defend",
+        "os_exploit_guard", "os_exploit_status", "os_ring_set", "os_ring_get",
+        "os_perm_grant", "os_perm_revoke", "os_perm_check",
+        "os_firewall_rule", "os_defense_hook", "os_block_list"
     }
 
     while i < n:
@@ -165,17 +870,19 @@ def tokenize(code):
                 i += 1
             continue
 
-        if c == '"':
+        if c in ('"', "'"):
+            quote_char = c
             start_line = line
             i += 1
             start_s = i
-            while i < n and code[i] != '"':
+            while i < n and code[i] != quote_char:
                 if code[i] == '\n':
                     line += 1
                 i += 1
             if i >= n:
                 raise TrappyError("Unclosed string quote", start_line)
-            str_val = code[start_s:i]
+            raw_str = code[start_s:i]
+            str_val = raw_str.replace("\\n", "\n").replace("\\t", "\t").replace('\\"', '"').replace("\\'", "'")
             i += 1
             tokens.append(Token("STR", str_val, start_line))
             continue
@@ -370,7 +1077,54 @@ class Parser:
             "CONTINUE": self._parse_continue,
             "CNT": self._parse_continue,
             "TRY": self._parse_try,
-            "RETURN": self._parse_return
+            "RETURN": self._parse_return,
+            "FOS": self._parse_fos,
+            "OS_BOOT": self._parse_os_boot,
+            "OS_SHUTDOWN": self._parse_os_shutdown,
+            "OS_PANIC": self._parse_os_panic,
+            "OS_PROC_SPAWN": self._parse_os_proc_spawn,
+            "OS_PROC_KILL": self._parse_os_proc_kill,
+            "OS_PROC_LIST": self._parse_os_proc_list,
+            "OS_YIELD": self._parse_os_yield,
+            "OS_IPC_SEND": self._parse_os_ipc_send,
+            "OS_IPC_RECV": self._parse_os_ipc_recv,
+            "OS_VFS_MOUNT": self._parse_os_vfs_mount,
+            "OS_VFS_WRITE": self._parse_os_vfs_write,
+            "OS_VFS_READ": self._parse_os_vfs_read,
+            "OS_VFS_LIST": self._parse_os_vfs_list,
+            "OS_VFS_DEL": self._parse_os_vfs_del,
+            "OS_VFS_STAT": self._parse_os_vfs_stat,
+            "OS_SETTING_SET": self._parse_os_setting_set,
+            "OS_SETTING_GET": self._parse_os_setting_get,
+            "OS_SETTING_DUMP": self._parse_os_setting_dump,
+            "OS_APP_DOWNLOAD": self._parse_os_app_download,
+            "OS_APP_INSTALL": self._parse_os_app_install,
+            "OS_APP_LAUNCH": self._parse_os_app_launch,
+            "OS_APP_LIST": self._parse_os_app_list,
+            "OS_APP_KILL": self._parse_os_app_kill,
+            "OS_APP_UNINSTALL": self._parse_os_app_uninstall,
+            "OS_SCREEN_MODE": self._parse_os_screen_mode,
+            "OS_HW_INFO": self._parse_os_hw_info,
+            "OS_BATTERY_INFO": self._parse_os_battery_info,
+            "OS_TOUCH_EVENT": self._parse_os_touch_event,
+            "OS_UI_WINDOW": self._parse_os_ui_window,
+            "OS_UI_TASKBAR": self._parse_os_ui_taskbar,
+            "OS_UI_NOTIFY": self._parse_os_ui_notify,
+            "OS_UI_RENDER": self._parse_os_ui_render,
+            "OS_INTEGRITY_SEAL": self._parse_os_integrity_seal,
+            "OS_INTEGRITY_VERIFY": self._parse_os_integrity_verify,
+            "OS_JAILBREAK_CHECK": self._parse_os_jailbreak_check,
+            "OS_JAILBREAK_DEFEND": self._parse_os_jailbreak_defend,
+            "OS_EXPLOIT_GUARD": self._parse_os_exploit_guard,
+            "OS_EXPLOIT_STATUS": self._parse_os_exploit_status,
+            "OS_RING_SET": self._parse_os_ring_set,
+            "OS_RING_GET": self._parse_os_ring_get,
+            "OS_PERM_GRANT": self._parse_os_perm_grant,
+            "OS_PERM_REVOKE": self._parse_os_perm_revoke,
+            "OS_PERM_CHECK": self._parse_os_perm_check,
+            "OS_FIREWALL_RULE": self._parse_os_firewall_rule,
+            "OS_DEFENSE_HOOK": self._parse_os_defense_hook,
+            "OS_BLOCK_LIST": self._parse_os_block_list
         }
 
     def peek(self):
@@ -388,6 +1142,17 @@ class Parser:
         if tok.kind in ("TIT", "EQ", "="):
             return self.consume(tok.kind).val
         raise TrappyError(f"Expected 'tit' or 'eq', but got '{tok.val}'", tok.line)
+
+    def _opt_colon(self):
+        if self.peek().kind == ":":
+            self.consume(":")
+
+    def _consume_tit_var(self):
+        self.consume("TIT")
+        tok = self.peek()
+        if tok.kind in ("NAME", "STR"):
+            return self.consume(tok.kind).val
+        return self.consume("NAME").val
 
     def parse_condition(self):
         left = self.parse_atom()
@@ -1308,6 +2073,311 @@ class Parser:
         expr = self.parse_expr()
         return ("RETURN", expr, tok.line)
 
+    def _parse_os_boot(self, tok):
+        self.consume("OS_BOOT")
+        name_expr = self.parse_expr()
+        self._opt_colon()
+        ver_expr = self.parse_expr()
+        return ("OS_BOOT", name_expr, ver_expr, tok.line)
+
+    def _parse_os_shutdown(self, tok):
+        self.consume("OS_SHUTDOWN")
+        return ("OS_SHUTDOWN", tok.line)
+
+    def _parse_os_panic(self, tok):
+        self.consume("OS_PANIC")
+        reason_expr = self.parse_expr()
+        return ("OS_PANIC", reason_expr, tok.line)
+
+    def _parse_os_proc_spawn(self, tok):
+        self.consume("OS_PROC_SPAWN")
+        name_expr = self.parse_expr()
+        self._opt_colon()
+        code_expr = self.parse_expr()
+        var_name = self._consume_tit_var()
+        return ("OS_PROC_SPAWN", name_expr, code_expr, var_name, tok.line)
+
+    def _parse_os_proc_kill(self, tok):
+        self.consume("OS_PROC_KILL")
+        pid_expr = self.parse_expr()
+        return ("OS_PROC_KILL", pid_expr, tok.line)
+
+    def _parse_os_proc_list(self, tok):
+        self.consume("OS_PROC_LIST")
+        var_name = self._consume_tit_var()
+        return ("OS_PROC_LIST", var_name, tok.line)
+
+    def _parse_os_yield(self, tok):
+        self.consume("OS_YIELD")
+        return ("OS_YIELD", tok.line)
+
+    def _parse_os_ipc_send(self, tok):
+        self.consume("OS_IPC_SEND")
+        ch_expr = self.parse_expr()
+        self._opt_colon()
+        data_expr = self.parse_expr()
+        return ("OS_IPC_SEND", ch_expr, data_expr, tok.line)
+
+    def _parse_os_ipc_recv(self, tok):
+        self.consume("OS_IPC_RECV")
+        ch_expr = self.parse_expr()
+        var_name = self._consume_tit_var()
+        return ("OS_IPC_RECV", ch_expr, var_name, tok.line)
+
+    def _parse_os_vfs_mount(self, tok):
+        self.consume("OS_VFS_MOUNT")
+        point_expr = self.parse_expr()
+        self._opt_colon()
+        type_expr = self.parse_expr()
+        return ("OS_VFS_MOUNT", point_expr, type_expr, tok.line)
+
+    def _parse_os_vfs_write(self, tok):
+        self.consume("OS_VFS_WRITE")
+        path_expr = self.parse_expr()
+        self._opt_colon()
+        content_expr = self.parse_expr()
+        return ("OS_VFS_WRITE", path_expr, content_expr, tok.line)
+
+    def _parse_os_vfs_read(self, tok):
+        self.consume("OS_VFS_READ")
+        path_expr = self.parse_expr()
+        var_name = self._consume_tit_var()
+        return ("OS_VFS_READ", path_expr, var_name, tok.line)
+
+    def _parse_os_vfs_list(self, tok):
+        self.consume("OS_VFS_LIST")
+        path_expr = self.parse_expr()
+        var_name = self._consume_tit_var()
+        return ("OS_VFS_LIST", path_expr, var_name, tok.line)
+
+    def _parse_os_vfs_del(self, tok):
+        self.consume("OS_VFS_DEL")
+        path_expr = self.parse_expr()
+        return ("OS_VFS_DEL", path_expr, tok.line)
+
+    def _parse_os_vfs_stat(self, tok):
+        self.consume("OS_VFS_STAT")
+        path_expr = self.parse_expr()
+        var_name = self._consume_tit_var()
+        return ("OS_VFS_STAT", path_expr, var_name, tok.line)
+
+    def _parse_os_setting_set(self, tok):
+        self.consume("OS_SETTING_SET")
+        key_expr = self.parse_expr()
+        self._opt_colon()
+        val_expr = self.parse_expr()
+        return ("OS_SETTING_SET", key_expr, val_expr, tok.line)
+
+    def _parse_os_setting_get(self, tok):
+        self.consume("OS_SETTING_GET")
+        key_expr = self.parse_expr()
+        self._opt_colon()
+        def_expr = self.parse_expr()
+        var_name = self._consume_tit_var()
+        return ("OS_SETTING_GET", key_expr, def_expr, var_name, tok.line)
+
+    def _parse_os_setting_dump(self, tok):
+        self.consume("OS_SETTING_DUMP")
+        var_name = self._consume_tit_var()
+        return ("OS_SETTING_DUMP", var_name, tok.line)
+
+    def _parse_os_app_download(self, tok):
+        self.consume("OS_APP_DOWNLOAD")
+        url_expr = self.parse_expr()
+        self._opt_colon()
+        app_expr = self.parse_expr()
+        var_name = self._consume_tit_var()
+        return ("OS_APP_DOWNLOAD", url_expr, app_expr, var_name, tok.line)
+
+    def _parse_os_app_install(self, tok):
+        self.consume("OS_APP_INSTALL")
+        app_expr = self.parse_expr()
+        self._opt_colon()
+        code_expr = self.parse_expr()
+        var_name = self._consume_tit_var()
+        return ("OS_APP_INSTALL", app_expr, code_expr, var_name, tok.line)
+
+    def _parse_os_app_launch(self, tok):
+        self.consume("OS_APP_LAUNCH")
+        app_expr = self.parse_expr()
+        var_name = self._consume_tit_var()
+        return ("OS_APP_LAUNCH", app_expr, var_name, tok.line)
+
+    def _parse_os_app_list(self, tok):
+        self.consume("OS_APP_LIST")
+        var_name = self._consume_tit_var()
+        return ("OS_APP_LIST", var_name, tok.line)
+
+    def _parse_os_app_kill(self, tok):
+        self.consume("OS_APP_KILL")
+        pid_expr = self.parse_expr()
+        return ("OS_APP_KILL", pid_expr, tok.line)
+
+    def _parse_os_app_uninstall(self, tok):
+        self.consume("OS_APP_UNINSTALL")
+        app_expr = self.parse_expr()
+        return ("OS_APP_UNINSTALL", app_expr, tok.line)
+
+    def _parse_os_screen_mode(self, tok):
+        self.consume("OS_SCREEN_MODE")
+        target_expr = self.parse_expr()
+        self._opt_colon()
+        orient_expr = self.parse_expr()
+        return ("OS_SCREEN_MODE", target_expr, orient_expr, tok.line)
+
+    def _parse_os_hw_info(self, tok):
+        self.consume("OS_HW_INFO")
+        var_name = self._consume_tit_var()
+        return ("OS_HW_INFO", var_name, tok.line)
+
+    def _parse_os_battery_info(self, tok):
+        self.consume("OS_BATTERY_INFO")
+        var_name = self._consume_tit_var()
+        return ("OS_BATTERY_INFO", var_name, tok.line)
+
+    def _parse_os_touch_event(self, tok):
+        self.consume("OS_TOUCH_EVENT")
+        var_name = self._consume_tit_var()
+        return ("OS_TOUCH_EVENT", var_name, tok.line)
+
+    def _parse_os_ui_window(self, tok):
+        self.consume("OS_UI_WINDOW")
+        title_expr = self.parse_expr()
+        self._opt_colon()
+        x_expr = self.parse_expr()
+        self._opt_colon()
+        y_expr = self.parse_expr()
+        self._opt_colon()
+        w_expr = self.parse_expr()
+        self._opt_colon()
+        h_expr = self.parse_expr()
+        var_name = self._consume_tit_var()
+        return ("OS_UI_WINDOW", title_expr, x_expr, y_expr, w_expr, h_expr, var_name, tok.line)
+
+    def _parse_os_ui_taskbar(self, tok):
+        self.consume("OS_UI_TASKBAR")
+        pos_expr = self.parse_expr()
+        self._opt_colon()
+        color_expr = self.parse_expr()
+        return ("OS_UI_TASKBAR", pos_expr, color_expr, tok.line)
+
+    def _parse_os_ui_notify(self, tok):
+        self.consume("OS_UI_NOTIFY")
+        title_expr = self.parse_expr()
+        self._opt_colon()
+        msg_expr = self.parse_expr()
+        level_expr = ("STR", "info")
+        if self.peek().kind not in ("\n", "TREN", "EOF") and self.peek().kind in ("STR", "NAME", ":"):
+            self._opt_colon()
+            level_expr = self.parse_expr()
+        return ("OS_UI_NOTIFY", title_expr, msg_expr, level_expr, tok.line)
+
+    def _parse_os_ui_render(self, tok):
+        self.consume("OS_UI_RENDER")
+        return ("OS_UI_RENDER", tok.line)
+
+    def _parse_os_integrity_seal(self, tok):
+        self.consume("OS_INTEGRITY_SEAL")
+        comp_expr = self.parse_expr()
+        self._opt_colon()
+        key_expr = self.parse_expr()
+        return ("OS_INTEGRITY_SEAL", comp_expr, key_expr, tok.line)
+
+    def _parse_os_integrity_verify(self, tok):
+        self.consume("OS_INTEGRITY_VERIFY")
+        comp_expr = self.parse_expr()
+        key_expr = ("STR", "")
+        if self.peek().kind not in ("TIT",):
+            self._opt_colon()
+            key_expr = self.parse_expr()
+        var_name = self._consume_tit_var()
+        return ("OS_INTEGRITY_VERIFY", comp_expr, key_expr, var_name, tok.line)
+
+    def _parse_os_jailbreak_check(self, tok):
+        self.consume("OS_JAILBREAK_CHECK")
+        var_name = self._consume_tit_var()
+        return ("OS_JAILBREAK_CHECK", var_name, tok.line)
+
+    def _parse_os_jailbreak_defend(self, tok):
+        self.consume("OS_JAILBREAK_DEFEND")
+        act_expr = self.parse_expr()
+        return ("OS_JAILBREAK_DEFEND", act_expr, tok.line)
+
+    def _parse_os_exploit_guard(self, tok):
+        self.consume("OS_EXPLOIT_GUARD")
+        feat_expr = self.parse_expr()
+        self._opt_colon()
+        state_expr = self.parse_expr()
+        return ("OS_EXPLOIT_GUARD", feat_expr, state_expr, tok.line)
+
+    def _parse_os_exploit_status(self, tok):
+        self.consume("OS_EXPLOIT_STATUS")
+        var_name = self._consume_tit_var()
+        return ("OS_EXPLOIT_STATUS", var_name, tok.line)
+
+    def _parse_os_ring_set(self, tok):
+        self.consume("OS_RING_SET")
+        ring_expr = self.parse_expr()
+        return ("OS_RING_SET", ring_expr, tok.line)
+
+    def _parse_os_ring_get(self, tok):
+        self.consume("OS_RING_GET")
+        var_name = self._consume_tit_var()
+        return ("OS_RING_GET", var_name, tok.line)
+
+    def _parse_os_perm_grant(self, tok):
+        self.consume("OS_PERM_GRANT")
+        app_expr = self.parse_expr()
+        self._opt_colon()
+        perm_expr = self.parse_expr()
+        return ("OS_PERM_GRANT", app_expr, perm_expr, tok.line)
+
+    def _parse_os_perm_revoke(self, tok):
+        self.consume("OS_PERM_REVOKE")
+        app_expr = self.parse_expr()
+        self._opt_colon()
+        perm_expr = self.parse_expr()
+        return ("OS_PERM_REVOKE", app_expr, perm_expr, tok.line)
+
+    def _parse_os_perm_check(self, tok):
+        self.consume("OS_PERM_CHECK")
+        app_expr = self.parse_expr()
+        self._opt_colon()
+        perm_expr = self.parse_expr()
+        var_name = self._consume_tit_var()
+        return ("OS_PERM_CHECK", app_expr, perm_expr, var_name, tok.line)
+
+    def _parse_os_firewall_rule(self, tok):
+        self.consume("OS_FIREWALL_RULE")
+        target_expr = self.parse_expr()
+        self._opt_colon()
+        act_expr = self.parse_expr()
+        return ("OS_FIREWALL_RULE", target_expr, act_expr, tok.line)
+
+    def _parse_os_defense_hook(self, tok):
+        self.consume("OS_DEFENSE_HOOK")
+        name_expr = self.parse_expr()
+        self._opt_colon()
+        act_expr = self.parse_expr()
+        return ("OS_DEFENSE_HOOK", name_expr, act_expr, tok.line)
+
+    def _parse_os_block_list(self, tok):
+        self.consume("OS_BLOCK_LIST")
+        cat_expr = self.parse_expr()
+        self._opt_colon()
+        id_expr = self.parse_expr()
+        return ("OS_BLOCK_LIST", cat_expr, id_expr, tok.line)
+
+    def _parse_fos(self, tok):
+        self.consume("FOS")
+        nxt = self.peek()
+        cand = f"OS_{nxt.val.upper()}" if nxt.kind in ("NAME",) else nxt.kind
+        if cand in self._dispatch:
+            sub_tok = self.consume(nxt.kind)
+            sub_tok.kind = cand
+            return self._dispatch[cand](sub_tok)
+        raise TrappyError(f"Unknown fos command '{nxt.val}'", nxt.line)
+
     def _parse_function_or_call(self, tok):
         fn_prefixes = ("FMH", "FTXT", "F3D", "FOS", "FCLI", "FUI", "FLIST", "FREP", "FLOOP", "FGUI", "FDRW", "FGFX", "FCAN", "FWEB", "FAPP", "FN", "FUNC")
         if tok.kind in fn_prefixes:
@@ -1701,6 +2771,7 @@ class TrappyInterpreter:
         self.game_loop_body = None
         self.call_depth = 0
         self.MAX_CALL_DEPTH = 100
+        self.os_kernel = TrappyOSKernel(self)
 
         self._eval_dispatch = {
             "PROGRAM": self._eval_program,
@@ -1810,7 +2881,53 @@ class TrappyInterpreter:
             "LINSERT": self._eval_linsert,
             "LSLICE": self._eval_lslice,
             "DHAS": self._eval_dhas,
-            "DDEL": self._eval_ddel
+            "DDEL": self._eval_ddel,
+            "OS_BOOT": self._eval_os_boot,
+            "OS_SHUTDOWN": self._eval_os_shutdown,
+            "OS_PANIC": self._eval_os_panic,
+            "OS_PROC_SPAWN": self._eval_os_proc_spawn,
+            "OS_PROC_KILL": self._eval_os_proc_kill,
+            "OS_PROC_LIST": self._eval_os_proc_list,
+            "OS_YIELD": self._eval_os_yield,
+            "OS_IPC_SEND": self._eval_os_ipc_send,
+            "OS_IPC_RECV": self._eval_os_ipc_recv,
+            "OS_VFS_MOUNT": self._eval_os_vfs_mount,
+            "OS_VFS_WRITE": self._eval_os_vfs_write,
+            "OS_VFS_READ": self._eval_os_vfs_read,
+            "OS_VFS_LIST": self._eval_os_vfs_list,
+            "OS_VFS_DEL": self._eval_os_vfs_del,
+            "OS_VFS_STAT": self._eval_os_vfs_stat,
+            "OS_SETTING_SET": self._eval_os_setting_set,
+            "OS_SETTING_GET": self._eval_os_setting_get,
+            "OS_SETTING_DUMP": self._eval_os_setting_dump,
+            "OS_APP_DOWNLOAD": self._eval_os_app_download,
+            "OS_APP_INSTALL": self._eval_os_app_install,
+            "OS_APP_LAUNCH": self._eval_os_app_launch,
+            "OS_APP_LIST": self._eval_os_app_list,
+            "OS_APP_KILL": self._eval_os_app_kill,
+            "OS_APP_UNINSTALL": self._eval_os_app_uninstall,
+            "OS_SCREEN_MODE": self._eval_os_screen_mode,
+            "OS_HW_INFO": self._eval_os_hw_info,
+            "OS_BATTERY_INFO": self._eval_os_battery_info,
+            "OS_TOUCH_EVENT": self._eval_os_touch_event,
+            "OS_UI_WINDOW": self._eval_os_ui_window,
+            "OS_UI_TASKBAR": self._eval_os_ui_taskbar,
+            "OS_UI_NOTIFY": self._eval_os_ui_notify,
+            "OS_UI_RENDER": self._eval_os_ui_render,
+            "OS_INTEGRITY_SEAL": self._eval_os_integrity_seal,
+            "OS_INTEGRITY_VERIFY": self._eval_os_integrity_verify,
+            "OS_JAILBREAK_CHECK": self._eval_os_jailbreak_check,
+            "OS_JAILBREAK_DEFEND": self._eval_os_jailbreak_defend,
+            "OS_EXPLOIT_GUARD": self._eval_os_exploit_guard,
+            "OS_EXPLOIT_STATUS": self._eval_os_exploit_status,
+            "OS_RING_SET": self._eval_os_ring_set,
+            "OS_RING_GET": self._eval_os_ring_get,
+            "OS_PERM_GRANT": self._eval_os_perm_grant,
+            "OS_PERM_REVOKE": self._eval_os_perm_revoke,
+            "OS_PERM_CHECK": self._eval_os_perm_check,
+            "OS_FIREWALL_RULE": self._eval_os_firewall_rule,
+            "OS_DEFENSE_HOOK": self._eval_os_defense_hook,
+            "OS_BLOCK_LIST": self._eval_os_block_list
         }
 
     def run(self, ast):
@@ -2436,6 +3553,9 @@ class TrappyInterpreter:
     def _eval_http_get(self, stmt, env):
         _, url_expr, var_name, line = stmt
         url = validate_url(str(self.eval_expr(url_expr, env)), line)
+        if hasattr(self, 'os_kernel') and self.os_kernel:
+            if not self.os_kernel.check_network_firewall(self.os_kernel.active_app_id, url):
+                raise TrappySecurityError(f"Anti-Exploit Firewall: Network access blocked for app '{self.os_kernel.active_app_id}' to '{url}'", line)
         try:
             req = urllib.request.Request(url, headers={'User-Agent': 'TrappyRuntime/1.15'})
             with urllib.request.urlopen(req, timeout=3.0) as resp:
@@ -2591,6 +3711,8 @@ class TrappyInterpreter:
         val = int(self.eval_expr(byte_expr, env))
         if buf_id in self.memory_blocks:
             buf = self.memory_blocks[buf_id]
+            if hasattr(self, 'os_kernel') and self.os_kernel:
+                self.os_kernel.check_memory_bounds(buf_id, offset, len(buf), line)
             if 0 <= offset < len(buf):
                 buf[offset] = val & 0xFF
             else:
@@ -2602,6 +3724,8 @@ class TrappyInterpreter:
         offset = int(self.eval_expr(offset_expr, env))
         if buf_id in self.memory_blocks:
             buf = self.memory_blocks[buf_id]
+            if hasattr(self, 'os_kernel') and self.os_kernel:
+                self.os_kernel.check_memory_bounds(buf_id, offset, len(buf), line)
             if 0 <= offset < len(buf):
                 env.set(var_name, buf[offset])
             else:
@@ -2611,6 +3735,14 @@ class TrappyInterpreter:
         _, cmd_expr, var_name, line = stmt
         if self.safe_mode:
             raise TrappySecurityError("Command execution ('sys_exec') is disabled in safe mode", line)
+        if hasattr(self, 'os_kernel') and self.os_kernel and self.os_kernel.current_ring > 0:
+            self.os_kernel.exploit_events.append({
+                'type': 'unauthorized_sys_exec',
+                'pid': self.os_kernel.active_pid,
+                'ring': self.os_kernel.current_ring,
+                'time': time.time()
+            })
+            raise TrappySecurityError("Anti-Exploit: Command execution blocked for Userland Ring process", line)
         cmd = str(self.eval_expr(cmd_expr, env))
         try:
             res = subprocess.check_output(cmd, shell=True, text=True, stderr=subprocess.STDOUT)
@@ -3078,6 +4210,268 @@ class TrappyInterpreter:
             self.call_depth -= 1
 
         return result
+
+    def _eval_os_boot(self, stmt, env):
+        _, name_expr, ver_expr, _ = stmt
+        name = str(self.eval_expr(name_expr, env))
+        ver = str(self.eval_expr(ver_expr, env))
+        self.os_kernel.boot(name, ver)
+
+    def _eval_os_shutdown(self, stmt, env):
+        self.os_kernel.shutdown()
+
+    def _eval_os_panic(self, stmt, env):
+        _, reason_expr, _ = stmt
+        reason = str(self.eval_expr(reason_expr, env))
+        self.os_kernel.panic(reason)
+
+    def _eval_os_proc_spawn(self, stmt, env):
+        _, name_expr, code_expr, var_name, _ = stmt
+        name = str(self.eval_expr(name_expr, env))
+        code = str(self.eval_expr(code_expr, env))
+        pid = self.os_kernel.proc_spawn(name, code)
+        env.set(var_name, pid)
+
+    def _eval_os_proc_kill(self, stmt, env):
+        _, pid_expr, _ = stmt
+        pid = int(self.eval_expr(pid_expr, env))
+        self.os_kernel.proc_kill(pid)
+
+    def _eval_os_proc_list(self, stmt, env):
+        _, var_name, _ = stmt
+        procs = self.os_kernel.proc_list()
+        env.set(var_name, procs)
+
+    def _eval_os_yield(self, stmt, env):
+        self.os_kernel.proc_yield()
+
+    def _eval_os_ipc_send(self, stmt, env):
+        _, ch_expr, data_expr, _ = stmt
+        ch = str(self.eval_expr(ch_expr, env))
+        data = self.eval_expr(data_expr, env)
+        self.os_kernel.ipc_send(ch, data)
+
+    def _eval_os_ipc_recv(self, stmt, env):
+        _, ch_expr, var_name, _ = stmt
+        ch = str(self.eval_expr(ch_expr, env))
+        val = self.os_kernel.ipc_recv(ch)
+        env.set(var_name, val)
+
+    def _eval_os_vfs_mount(self, stmt, env):
+        _, point_expr, type_expr, _ = stmt
+        point = str(self.eval_expr(point_expr, env))
+        btype = str(self.eval_expr(type_expr, env))
+        self.os_kernel.vfs_mount(point, btype)
+
+    def _eval_os_vfs_write(self, stmt, env):
+        _, path_expr, content_expr, _ = stmt
+        path = str(self.eval_expr(path_expr, env))
+        content = str(self.eval_expr(content_expr, env))
+        self.os_kernel.vfs_write(path, content)
+
+    def _eval_os_vfs_read(self, stmt, env):
+        _, path_expr, var_name, _ = stmt
+        path = str(self.eval_expr(path_expr, env))
+        val = self.os_kernel.vfs_read(path)
+        env.set(var_name, val)
+
+    def _eval_os_vfs_list(self, stmt, env):
+        _, path_expr, var_name, _ = stmt
+        path = str(self.eval_expr(path_expr, env))
+        val = self.os_kernel.vfs_list(path)
+        env.set(var_name, val)
+
+    def _eval_os_vfs_del(self, stmt, env):
+        _, path_expr, _ = stmt
+        path = str(self.eval_expr(path_expr, env))
+        self.os_kernel.vfs_del(path)
+
+    def _eval_os_vfs_stat(self, stmt, env):
+        _, path_expr, var_name, _ = stmt
+        path = str(self.eval_expr(path_expr, env))
+        val = self.os_kernel.vfs_stat(path)
+        env.set(var_name, val)
+
+    def _eval_os_setting_set(self, stmt, env):
+        _, key_expr, val_expr, _ = stmt
+        key = str(self.eval_expr(key_expr, env))
+        val = self.eval_expr(val_expr, env)
+        self.os_kernel.setting_set(key, val)
+
+    def _eval_os_setting_get(self, stmt, env):
+        _, key_expr, def_expr, var_name, _ = stmt
+        key = str(self.eval_expr(key_expr, env))
+        default_val = self.eval_expr(def_expr, env)
+        val = self.os_kernel.setting_get(key, default_val)
+        env.set(var_name, val)
+
+    def _eval_os_setting_dump(self, stmt, env):
+        _, var_name, _ = stmt
+        dump = self.os_kernel.setting_dump()
+        env.set(var_name, dump)
+
+    def _eval_os_app_download(self, stmt, env):
+        _, url_expr, app_expr, var_name, _ = stmt
+        url = str(self.eval_expr(url_expr, env))
+        app_id = str(self.eval_expr(app_expr, env))
+        res = self.os_kernel.app_download(url, app_id)
+        env.set(var_name, res)
+
+    def _eval_os_app_install(self, stmt, env):
+        _, app_expr, code_expr, var_name, _ = stmt
+        app_id = str(self.eval_expr(app_expr, env))
+        code = str(self.eval_expr(code_expr, env))
+        res = self.os_kernel.app_install(app_id, code)
+        env.set(var_name, res)
+
+    def _eval_os_app_launch(self, stmt, env):
+        _, app_expr, var_name, _ = stmt
+        app_id = str(self.eval_expr(app_expr, env))
+        pid = self.os_kernel.app_launch(app_id)
+        env.set(var_name, pid)
+
+    def _eval_os_app_list(self, stmt, env):
+        _, var_name, _ = stmt
+        val = self.os_kernel.app_list()
+        env.set(var_name, val)
+
+    def _eval_os_app_kill(self, stmt, env):
+        _, pid_expr, _ = stmt
+        pid = int(self.eval_expr(pid_expr, env))
+        self.os_kernel.app_kill(pid)
+
+    def _eval_os_app_uninstall(self, stmt, env):
+        _, app_expr, _ = stmt
+        app_id = str(self.eval_expr(app_expr, env))
+        self.os_kernel.app_uninstall(app_id)
+
+    def _eval_os_screen_mode(self, stmt, env):
+        _, target_expr, orient_expr, _ = stmt
+        target = str(self.eval_expr(target_expr, env))
+        orient = str(self.eval_expr(orient_expr, env))
+        self.os_kernel.set_screen_mode(target, orient)
+
+    def _eval_os_hw_info(self, stmt, env):
+        _, var_name, _ = stmt
+        info = self.os_kernel.hw_info()
+        env.set(var_name, info)
+
+    def _eval_os_battery_info(self, stmt, env):
+        _, var_name, _ = stmt
+        info = self.os_kernel.battery_info()
+        env.set(var_name, info)
+
+    def _eval_os_touch_event(self, stmt, env):
+        _, var_name, _ = stmt
+        info = self.os_kernel.touch_event()
+        env.set(var_name, info)
+
+    def _eval_os_ui_window(self, stmt, env):
+        _, title_expr, x_expr, y_expr, w_expr, h_expr, var_name, _ = stmt
+        title = str(self.eval_expr(title_expr, env))
+        x = int(self.eval_expr(x_expr, env))
+        y = int(self.eval_expr(y_expr, env))
+        w = int(self.eval_expr(w_expr, env))
+        h = int(self.eval_expr(h_expr, env))
+        win_id = self.os_kernel.ui_window(title, x, y, w, h)
+        env.set(var_name, win_id)
+
+    def _eval_os_ui_taskbar(self, stmt, env):
+        _, pos_expr, color_expr, _ = stmt
+        pos = str(self.eval_expr(pos_expr, env))
+        color = str(self.eval_expr(color_expr, env))
+        self.os_kernel.ui_taskbar(pos, color)
+
+    def _eval_os_ui_notify(self, stmt, env):
+        _, title_expr, msg_expr, level_expr, _ = stmt
+        title = str(self.eval_expr(title_expr, env))
+        msg = str(self.eval_expr(msg_expr, env))
+        level = str(self.eval_expr(level_expr, env))
+        self.os_kernel.ui_notify(title, msg, level)
+
+    def _eval_os_ui_render(self, stmt, env):
+        self.os_kernel.ui_render()
+
+    def _eval_os_integrity_seal(self, stmt, env):
+        _, comp_expr, key_expr, _ = stmt
+        comp = str(self.eval_expr(comp_expr, env))
+        key = str(self.eval_expr(key_expr, env))
+        self.os_kernel.integrity_seal(comp, key)
+
+    def _eval_os_integrity_verify(self, stmt, env):
+        _, comp_expr, key_expr, var_name, _ = stmt
+        comp = str(self.eval_expr(comp_expr, env))
+        key = str(self.eval_expr(key_expr, env))
+        res = self.os_kernel.integrity_verify(comp, key)
+        env.set(var_name, res)
+
+    def _eval_os_jailbreak_check(self, stmt, env):
+        _, var_name, _ = stmt
+        report = self.os_kernel.jailbreak_check()
+        env.set(var_name, report)
+
+    def _eval_os_jailbreak_defend(self, stmt, env):
+        _, act_expr, _ = stmt
+        act = str(self.eval_expr(act_expr, env))
+        self.os_kernel.jailbreak_defend(act)
+
+    def _eval_os_exploit_guard(self, stmt, env):
+        _, feat_expr, state_expr, _ = stmt
+        feat = str(self.eval_expr(feat_expr, env))
+        state = int(self.eval_expr(state_expr, env))
+        self.os_kernel.exploit_guard(feat, state)
+
+    def _eval_os_exploit_status(self, stmt, env):
+        _, var_name, _ = stmt
+        status = self.os_kernel.exploit_status()
+        env.set(var_name, status)
+
+    def _eval_os_ring_set(self, stmt, env):
+        _, ring_expr, _ = stmt
+        ring = int(self.eval_expr(ring_expr, env))
+        self.os_kernel.set_ring(ring)
+
+    def _eval_os_ring_get(self, stmt, env):
+        _, var_name, _ = stmt
+        r = self.os_kernel.get_ring()
+        env.set(var_name, r)
+
+    def _eval_os_perm_grant(self, stmt, env):
+        _, app_expr, perm_expr, _ = stmt
+        app_id = str(self.eval_expr(app_expr, env))
+        perm = str(self.eval_expr(perm_expr, env))
+        self.os_kernel.perm_grant(app_id, perm)
+
+    def _eval_os_perm_revoke(self, stmt, env):
+        _, app_expr, perm_expr, _ = stmt
+        app_id = str(self.eval_expr(app_expr, env))
+        perm = str(self.eval_expr(perm_expr, env))
+        self.os_kernel.perm_revoke(app_id, perm)
+
+    def _eval_os_perm_check(self, stmt, env):
+        _, app_expr, perm_expr, var_name, _ = stmt
+        app_id = str(self.eval_expr(app_expr, env))
+        perm = str(self.eval_expr(perm_expr, env))
+        res = self.os_kernel.perm_check(app_id, perm)
+        env.set(var_name, res)
+
+    def _eval_os_firewall_rule(self, stmt, env):
+        _, target_expr, act_expr, _ = stmt
+        target = str(self.eval_expr(target_expr, env))
+        act = str(self.eval_expr(act_expr, env))
+        self.os_kernel.firewall_rule(target, act)
+
+    def _eval_os_defense_hook(self, stmt, env):
+        _, name_expr, act_expr, _ = stmt
+        name = str(self.eval_expr(name_expr, env))
+        act = str(self.eval_expr(act_expr, env))
+        self.os_kernel.defense_hook(name, act)
+
+    def _eval_os_block_list(self, stmt, env):
+        _, cat_expr, id_expr, _ = stmt
+        cat = str(self.eval_expr(cat_expr, env))
+        identifier = str(self.eval_expr(id_expr, env))
+        self.os_kernel.block_list(cat, identifier)
 
 def run_trappy(code, safe_mode=False):
     tokens = tokenize(code)

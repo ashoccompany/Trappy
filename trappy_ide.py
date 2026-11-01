@@ -47,7 +47,19 @@ ASSIST_KEYWORDS = [
     "slower", "supper", "ord", "chr", "is_digit", "is_alpha",
     "type_of", "to_str", "to_num", "to_int", "to_float",
     "lcontains", "linsert", "lslice", "dhas", "ddel",
-    "true", "false", "import", "exit"
+    "true", "false", "import", "exit",
+    "os_boot", "os_shutdown", "os_panic",
+    "os_proc_spawn", "os_proc_kill", "os_proc_list", "os_yield",
+    "os_ipc_send", "os_ipc_recv",
+    "os_vfs_mount", "os_vfs_write", "os_vfs_read", "os_vfs_list", "os_vfs_del", "os_vfs_stat",
+    "os_setting_set", "os_setting_get", "os_setting_dump",
+    "os_app_download", "os_app_install", "os_app_launch", "os_app_list", "os_app_kill", "os_app_uninstall",
+    "os_screen_mode", "os_hw_info", "os_battery_info", "os_touch_event",
+    "os_ui_window", "os_ui_taskbar", "os_ui_notify", "os_ui_render",
+    "os_integrity_seal", "os_integrity_verify", "os_jailbreak_check", "os_jailbreak_defend",
+    "os_exploit_guard", "os_exploit_status", "os_ring_set", "os_ring_get",
+    "os_perm_grant", "os_perm_revoke", "os_perm_check",
+    "os_firewall_rule", "os_defense_hook", "os_block_list"
 ]
 
 HIGHLIGHT_KEYWORDS = list(set(ASSIST_KEYWORDS + [
@@ -55,6 +67,17 @@ HIGHLIGHT_KEYWORDS = list(set(ASSIST_KEYWORDS + [
 ]))
 
 MANUAL_DATABASE = [
+    ("os_boot", 'os_boot "OSName" "Version"', "Initializes and boots the TrappyOS kernel, process table, VFS, and security subsystem.", 'os_boot "TrappyOS" "1.5.0"'),
+    ("os_screen_mode", 'os_screen_mode "phone"|"computer" "portrait"|"landscape"', "Configures the OS target device frame, aspect ratio, and resolution (smartphone vs desktop workstation).", 'os_screen_mode "phone" "portrait"'),
+    ("os_vfs_write", 'os_vfs_write "/path" "data"', "Writes data securely to the OS Virtual File System with path traversal guards.", 'os_vfs_write "/etc/hostname" "trappy-node"'),
+    ("os_vfs_read", 'os_vfs_read "/path" tit var', "Reads file data or virtual proc files (/proc/version, /proc/uptime) from VFS.", 'os_vfs_read "/etc/hostname" tit host'),
+    ("os_app_download", 'os_app_download "url" "app_id" tit status', "Downloads and verifies a Trappy application from the network into /apps.", 'os_app_download "https://example.com/app.trappy" "calc" tit status'),
+    ("os_app_launch", 'os_app_launch "app_id" tit pid', "Launches an installed Trappy app in an isolated Ring 3 Userland sandbox.", 'os_app_launch "calc" tit pid'),
+    ("os_jailbreak_check", 'os_jailbreak_check tit report', "Scans for system file tampering, unverified components, and root privilege escalation attempts.", 'os_jailbreak_check tit report'),
+    ("os_exploit_guard", 'os_exploit_guard "canary"|"nx_memory" 1', "Enables hardware-level exploit guards such as memory buffer canary bounds checking and execution filters.", 'os_exploit_guard "canary" 1'),
+    ("os_perm_grant", 'os_perm_grant "app_id" "PERMISSION"', "Grants granular permissions (NETWORK, STORAGE, UI, AUDIO) to a sandboxed app.", 'os_perm_grant "calc" "UI"'),
+    ("os_ui_window", 'os_ui_window "Title" x:y:w:h tit win_id', "Registers a managed desktop or mobile window container in the OS compositor.", 'os_ui_window "Terminal" 50:50:400:250 tit term_win'),
+    ("os_ui_render", 'os_ui_render', "Renders the composite OS desktop or phone interface, status bar, windows, and notifications.", 'os_ui_render'),
     ("discord_webhook", "discord_webhook url:msg tit status", "Sends a live notification to a Discord channel via Webhook. Returns HTTP status 204 or error.", 'discord_webhook "https://discord.com/api/webhooks/...":"Player won!" tit res'),
     ("dict", "dict tit var_name", "Initializes a fast key-value dictionary hash map.", 'dict tit inventory\ndset inventory:"gold":500\ndget inventory:"gold" tit gold'),
     ("dset", "dset dict:key:val", "Stores a key-value pair in a dictionary.", 'dset player:"name":"Alex"'),

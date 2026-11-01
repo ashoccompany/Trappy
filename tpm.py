@@ -108,7 +108,7 @@ def install_package(pkg_name_or_url):
         target_path = os.path.join(PKG_DIR, target_name)
         print(f"Downloading package from: {pkg_name_or_url} ...")
         try:
-            req = urllib.request.Request(pkg_name_or_url, headers={'User-Agent': 'TPM/1.15'})
+            req = urllib.request.Request(pkg_name_or_url, headers={'User-Agent': 'TPM/1.5.0'})
             with urllib.request.urlopen(req, timeout=15) as resp:
                 content = resp.read()
             with open(target_path, "wb") as f:

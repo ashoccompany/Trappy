@@ -1,0 +1,64 @@
+trst
+    out "========================================="
+    out "TRAPPY OS v1.5 - KERNEL BOOT SEQUENCE"
+    out "========================================="
+
+    os_boot "TrappyOS" "1.5.0"
+
+    out "Step 1: Configuring Hardware and Screen Mode"
+    os_screen_mode "phone" "portrait"
+    os_hw_info tit hw
+    out "Hardware Architecture:"
+    out hw
+
+    out "Step 2: Checking Battery and Power Management"
+    os_battery_info tit bat
+    out "Battery Status:"
+    out bat
+
+    out "Step 3: Initializing Virtual File System (VFS)"
+    os_vfs_write "/etc/hostname" "trappy-phone-01"
+    os_vfs_write "/etc/motd" "Welcome to TrappyOS v1.5 Mobile Edition"
+    os_vfs_read "/etc/motd" tit motd
+    out motd
+    os_vfs_list "/etc" tit etc_list
+    out "Files in /etc:"
+    out etc_list
+
+    out "Step 4: Activating Anti-Jailbreak and Anti-Exploit Defenses"
+    os_exploit_guard "canary" 1
+    os_exploit_guard "nx_memory" 1
+    os_exploit_guard "syscall_filter" 1
+    os_jailbreak_defend "panic"
+
+    os_integrity_seal "/etc/hostname" "sys_secret_key"
+    os_integrity_verify "/etc/hostname" "sys_secret_key" tit seal_valid
+    out "Integrity Seal Verified (1=OK):"
+    out seal_valid
+
+    os_jailbreak_check tit jb_report
+    out "Jailbreak Scan Report:"
+    out jb_report
+
+    out "Step 5: App Store - Installing and Sandboxing Trappy App"
+    os_perm_grant "calculator" "UI"
+    os_perm_grant "calculator" "STORAGE"
+
+    os_app_install "calculator" "trst\n out 'Calculator App running in Userland Ring 3'\ntren" tit install_res
+    out "Install Status:"
+    out install_res
+
+    os_app_launch "calculator" tit calc_pid
+    out "Calculator Process Launched on PID:"
+    out calc_pid
+
+    out "Step 6: UI Compositor - Window and Notification Creation"
+    os_ui_window "Calculator" 20 60 340 500 tit win1
+    os_ui_taskbar "bottom" "#18181b"
+    os_ui_notify "System Ready" "TrappyOS v1.5 is online and secured." "info"
+    os_ui_render
+
+    out "========================================="
+    out "TRAPPY OS BOOT & DEFENSE INITIALIZATION COMPLETE"
+    out "========================================="
+tren
