@@ -1,9 +1,26 @@
+# Python bytecode & cache
 __pycache__/
 *.py[cod]
 *$py.class
 _temp_run.trappy
+
+# Build & packaging
 build/
 dist/
 *.spec
+
+# IDE configs
 .vscode/
 .idea/
+
+# Security & Secrets protection
+.env
+.env.*
+*.key
+*.token
+*.pem
+*.cert
+*.pfx
+*.log
+credentials.json
+token.json

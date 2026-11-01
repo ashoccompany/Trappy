@@ -1,0 +1,50 @@
+name: Trappy CI & Security Analysis
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Unit & Security Test Suite
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        python-version: [ "3.10", "3.11", "3.12" ]
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Run Test Suite
+      run: |
+        python -m unittest discover tests -v
+
+  security-audit:
+    name: Static Security Analysis (Bandit)
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install Bandit
+      run: |
+        pip install bandit
+
+    - name: Run Security Audit
+      run: |
+        bandit -r trappy.py tpm.py trappy_ide.py -ll -ii --skip B404,B602,B310 || true

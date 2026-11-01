@@ -86,16 +86,29 @@ def search_hub(keyword=""):
     print("-" * 65)
     print(f"Total: {matched} package(s) found. Run 'tpm install <name>' to install.\n")
 
+import re
+
+def sanitize_pkg_name(name):
+    base = os.path.basename(str(name)).replace(".trappy", "")
+    clean = re.sub(r'[^a-zA-Z0-9_-]', '', base)
+    if not clean:
+        raise ValueError(f"Invalid package identifier: '{name}'")
+    return clean
+
 def install_package(pkg_name_or_url):
     ensure_dirs()
     if pkg_name_or_url.startswith("http://") or pkg_name_or_url.startswith("https://"):
-        target_name = pkg_name_or_url.split("/")[-1]
-        if not target_name.endswith(".trappy"):
-            target_name += ".trappy"
+        raw_name = pkg_name_or_url.split("/")[-1].split("?")[0]
+        try:
+            clean_name = sanitize_pkg_name(raw_name)
+        except ValueError as e:
+            print(f"Download rejected: {e}")
+            return
+        target_name = f"{clean_name}.trappy"
         target_path = os.path.join(PKG_DIR, target_name)
         print(f"Downloading package from: {pkg_name_or_url} ...")
         try:
-            req = urllib.request.Request(pkg_name_or_url, headers={'User-Agent': 'TPM/0.9'})
+            req = urllib.request.Request(pkg_name_or_url, headers={'User-Agent': 'TPM/1.15'})
             with urllib.request.urlopen(req, timeout=15) as resp:
                 content = resp.read()
             with open(target_path, "wb") as f:
@@ -107,10 +120,16 @@ def install_package(pkg_name_or_url):
 
     index = load_index()
     pkgs = index.get("packages", {})
-    clean_name = pkg_name_or_url.replace(".trappy", "")
+    try:
+        clean_name = sanitize_pkg_name(pkg_name_or_url)
+    except ValueError as e:
+        print(f"Package installation rejected: {e}")
+        return
+
     if clean_name in pkgs:
         info = pkgs[clean_name]
-        src_file = os.path.join(COMMUNITY_HUB_DIR, info["file"])
+        safe_file = sanitize_pkg_name(info.get("file", clean_name)) + ".trappy"
+        src_file = os.path.join(COMMUNITY_HUB_DIR, safe_file)
         dest_file = os.path.join(PKG_DIR, f"{clean_name}.trappy")
         if os.path.exists(src_file):
             shutil.copyfile(src_file, dest_file)

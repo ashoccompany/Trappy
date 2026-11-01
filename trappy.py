@@ -88,6 +88,18 @@ def sanitize_path(filename, base_dir=None):
         raise TrappySecurityError(f"Path Traversal attempt blocked: '{filename}'")
     return target_path
 
+def validate_url(url, line=None):
+    if not isinstance(url, str):
+        raise TrappySecurityError("URL must be a string", line)
+    clean_url = url.strip()
+    parsed = urllib.parse.urlparse(clean_url)
+    if parsed.scheme.lower() not in ("http", "https"):
+        raise TrappySecurityError(
+            f"Blocked insecure URL scheme '{parsed.scheme}': only HTTP and HTTPS are permitted",
+            line
+        )
+    return clean_url
+
 class Token:
     def __init__(self, kind, val, line=0):
         self.kind = kind
@@ -1676,7 +1688,8 @@ class TrappyGUI:
             self.pressed_keys.discard(event.char.upper())
 
 class TrappyInterpreter:
-    def __init__(self):
+    def __init__(self, safe_mode=False):
+        self.safe_mode = safe_mode or (os.environ.get("TRAPPY_SAFE_MODE") == "1")
         self.global_env = Environment()
         self.functions = {}
         self.del_functions = {}
@@ -2422,7 +2435,7 @@ class TrappyInterpreter:
 
     def _eval_http_get(self, stmt, env):
         _, url_expr, var_name, line = stmt
-        url = str(self.eval_expr(url_expr, env))
+        url = validate_url(str(self.eval_expr(url_expr, env)), line)
         try:
             req = urllib.request.Request(url, headers={'User-Agent': 'TrappyRuntime/1.15'})
             with urllib.request.urlopen(req, timeout=3.0) as resp:
@@ -2433,7 +2446,7 @@ class TrappyInterpreter:
 
     def _eval_http_post(self, stmt, env):
         _, url_expr, data_expr, var_name, line = stmt
-        url = str(self.eval_expr(url_expr, env))
+        url = validate_url(str(self.eval_expr(url_expr, env)), line)
         data_raw = self.eval_expr(data_expr, env)
         try:
             if isinstance(data_raw, dict):
@@ -2451,7 +2464,7 @@ class TrappyInterpreter:
 
     def _eval_download_file(self, stmt, env):
         _, url_expr, file_path, line = stmt
-        url = str(self.eval_expr(url_expr, env))
+        url = validate_url(str(self.eval_expr(url_expr, env)), line)
         safe_path = sanitize_path(file_path)
         try:
             req = urllib.request.Request(url, headers={'User-Agent': 'TrappyRuntime/1.15'})
@@ -2534,16 +2547,17 @@ class TrappyInterpreter:
     def _eval_srv_listen(self, stmt, env):
         _, port_expr, var_name, line = stmt
         port = int(self.eval_expr(port_expr, env))
+        host = os.environ.get("TRAPPY_HOST", "127.0.0.1")
         try:
             srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            srv.bind(("0.0.0.0", port))
+            srv.bind((host, port))
             srv.listen(5)
             srv.setblocking(False)
             env.set(var_name, srv)
-            print(f"[Trappy Server]: Listening on port {port}")
+            print(f"[Trappy Server]: Listening on {host}:{port}")
         except Exception as e:
-            print(f"[Trappy Server]: Failed to bind on port {port}: {e}")
+            print(f"[Trappy Server]: Failed to bind on {host}:{port}: {e}")
             env.set(var_name, None)
 
     def _eval_srv_accept(self, stmt, env):
@@ -2570,6 +2584,8 @@ class TrappyInterpreter:
 
     def _eval_mem_write(self, stmt, env):
         _, buf_name, offset_expr, byte_expr, line = stmt
+        if self.safe_mode:
+            raise TrappySecurityError("Direct memory manipulation is disabled in safe mode", line)
         buf_id = env.get(buf_name, line)
         offset = int(self.eval_expr(offset_expr, env))
         val = int(self.eval_expr(byte_expr, env))
@@ -2592,7 +2608,9 @@ class TrappyInterpreter:
                 raise TrappyError(f"Memory out of bounds read at offset {offset}", line)
 
     def _eval_sys_exec(self, stmt, env):
-        _, cmd_expr, var_name, _ = stmt
+        _, cmd_expr, var_name, line = stmt
+        if self.safe_mode:
+            raise TrappySecurityError("Command execution ('sys_exec') is disabled in safe mode", line)
         cmd = str(self.eval_expr(cmd_expr, env))
         try:
             res = subprocess.check_output(cmd, shell=True, text=True, stderr=subprocess.STDOUT)
@@ -2606,8 +2624,8 @@ class TrappyInterpreter:
         env.set(var_name, os.environ.get(key, ""))
 
     def _eval_discord_webhook(self, stmt, env):
-        _, url_expr, msg_expr, status_var, _ = stmt
-        url = str(self.eval_expr(url_expr, env))
+        _, url_expr, msg_expr, status_var, line = stmt
+        url = validate_url(str(self.eval_expr(url_expr, env)), line)
         msg = str(self.eval_expr(msg_expr, env))
         status = 0
         try:
@@ -3061,21 +3079,23 @@ class TrappyInterpreter:
 
         return result
 
-def run_trappy(code):
+def run_trappy(code, safe_mode=False):
     tokens = tokenize(code)
     parser = Parser(tokens)
     ast = parser.parse_program()
-    interpreter = TrappyInterpreter()
+    interpreter = TrappyInterpreter(safe_mode=safe_mode)
     interpreter.run(ast)
     return interpreter
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        filepath = sys.argv[1]
+    safe_flag = "--safe" in sys.argv
+    clean_argv = [a for a in sys.argv[1:] if a != "--safe"]
+    if clean_argv:
+        filepath = clean_argv[0]
         if os.path.exists(filepath):
             with open(filepath, "r", encoding="utf-8") as f:
                 source = f.read()
-            run_trappy(source)
+            run_trappy(source, safe_mode=safe_flag)
         else:
             print(f"Error: File '{filepath}' does not exist.")
     else:

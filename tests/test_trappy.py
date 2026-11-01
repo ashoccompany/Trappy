@@ -516,5 +516,58 @@ tren
         self.assertEqual(env.get("tok_types"), ["NAME", "NUM", "NAME", "NAME"])
         self.assertEqual(env.get("tok_values"), ["add", 100, "to", "total"])
 
+
+class TestSecurityAndHardening(unittest.TestCase):
+    def test_url_scheme_validation_blocks_insecure_protocols(self):
+        code = """
+trst
+    http_get "file:///C:/Windows/win.ini" tit res
+tren
+"""
+        with self.assertRaises(trappy.TrappySecurityError) as ctx:
+            trappy.run_trappy(code)
+        self.assertIn("only HTTP and HTTPS are permitted", str(ctx.exception))
+
+    def test_safe_mode_blocks_sys_exec(self):
+        code = """
+trst
+    sys_exec "echo attack" tit cmd_out
+tren
+"""
+        with self.assertRaises(trappy.TrappySecurityError) as ctx:
+            trappy.run_trappy(code, safe_mode=True)
+        self.assertIn("sys_exec", str(ctx.exception))
+
+    def test_safe_mode_blocks_memory_write(self):
+        code = """
+trst
+    mem_alloc 64 tit b
+    mem_write b:0:255
+tren
+"""
+        with self.assertRaises(trappy.TrappySecurityError) as ctx:
+            trappy.run_trappy(code, safe_mode=True)
+        self.assertIn("Direct memory manipulation is disabled", str(ctx.exception))
+
+    def test_server_socket_binds_to_loopback_by_default(self):
+        interp = trappy.TrappyInterpreter()
+        port = 29199
+        stmt = ("SRV_LISTEN", ("NUM", port), "srv_sock", 1)
+        interp.eval_stmt(stmt, interp.global_env)
+        sock = interp.global_env.get("srv_sock")
+        if sock:
+            host, bound_port = sock.getsockname()
+            self.assertEqual(host, "127.0.0.1")
+            self.assertEqual(bound_port, port)
+            sock.close()
+
+    def test_tpm_sanitize_pkg_name_prevents_directory_traversal(self):
+        import tpm
+        self.assertEqual(tpm.sanitize_pkg_name("physics_2d"), "physics_2d")
+        self.assertEqual(tpm.sanitize_pkg_name("../../../evil"), "evil")
+        self.assertEqual(tpm.sanitize_pkg_name("my-package_v1.trappy"), "my-package_v1")
+        with self.assertRaises(ValueError):
+            tpm.sanitize_pkg_name("../../../..")
+
 if __name__ == "__main__":
     unittest.main()
