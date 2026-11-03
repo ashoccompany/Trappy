@@ -23,7 +23,7 @@ try:
 except ImportError:
     winsound = None
 
-__version__ = "1.5.0"
+__version__ = "1.6.0"
 
 class VirtualLoopbackSocket:
     _channels = {}
@@ -106,7 +106,7 @@ class TrappyOSKernel:
         self.interpreter = interpreter
         self.is_booted = False
         self.os_name = "TrappyOS"
-        self.version = "1.5.0"
+        self.version = "1.6.0"
         self.boot_time = time.time()
         self.current_ring = 0
         self.active_pid = 1
@@ -137,17 +137,18 @@ class TrappyOSKernel:
             "/proc": {"type": "dir"},
             "/var": {"type": "dir"},
             "/var/log": {"type": "dir"},
-            "/etc/os-release": {"type": "file", "content": "NAME=TrappyOS\nVERSION=1.5.0\nID=trappy\n"},
+            "/etc/os-release": {"type": "file", "content": "NAME=TrappyOS\nVERSION=1.6.0\nID=trappy\n"},
             "/etc/hostname": {"type": "file", "content": "trappy-node"},
-            "/sys/kernel": {"type": "file", "content": "TrappyKernel v1.5 Core"},
+            "/sys/kernel": {"type": "file", "content": "TrappyKernel v1.6 Core"},
             "/sys/security.conf": {"type": "file", "content": "ENFORCE=1\nCANARY=1\nNX=1\n"}
         }
 
         self.installed_apps = {}
+        self.last_app_env = None
 
         self.settings = {
             "os.name": "TrappyOS",
-            "os.version": "1.5.0",
+            "os.version": "1.6.0",
             "display.mode": "computer",
             "display.orientation": "landscape",
             "display.theme": "dark",
@@ -185,7 +186,7 @@ class TrappyOSKernel:
         self._init_default_seals()
 
     def _init_default_seals(self):
-        k_content = self.vfs.get("/sys/kernel", {}).get("content", "TrappyKernel v1.5 Core")
+        k_content = self.vfs.get("/sys/kernel", {}).get("content", "TrappyKernel v1.6 Core")
         self.integrity_seals["/sys/kernel"] = (hashlib.sha256(k_content.encode("utf-8")).hexdigest(), "")
         sec_conf = self.vfs.get("/sys/security.conf", {}).get("content", "")
         self.integrity_seals["/sys/security.conf"] = (hashlib.sha256(sec_conf.encode("utf-8")).hexdigest(), "")
@@ -307,14 +308,17 @@ class TrappyOSKernel:
 
     def vfs_write(self, path, content):
         norm_path = self.normalize_vfs_path(path)
-        if self.current_ring > 0 and (norm_path.startswith("/sys") or norm_path.startswith("/bin")):
-            self.jailbreak_events.append({
-                "type": "unauthorized_sys_write",
-                "path": norm_path,
-                "pid": self.active_pid,
-                "time": time.time()
-            })
-            raise TrappySecurityError(f"Permission denied: Ring {self.current_ring} cannot modify '{norm_path}'")
+        if self.current_ring > 0:
+            allowed_prefixes = ("/apps/", "/storage/", "/tmp/")
+            if not any(norm_path.startswith(p) for p in allowed_prefixes):
+                self.jailbreak_events.append({
+                    "type": "unauthorized_vfs_write",
+                    "path": norm_path,
+                    "ring": self.current_ring,
+                    "pid": self.active_pid,
+                    "time": time.time()
+                })
+                raise TrappySecurityError(f"Permission denied: Ring {self.current_ring} cannot modify '{norm_path}'. Writes restricted to /apps/, /storage/, /tmp/")
         
         content_str = str(content)
         content_bytes = content_str.encode("utf-8", errors="ignore")
@@ -367,6 +371,17 @@ class TrappyOSKernel:
         norm_path = self.normalize_vfs_path(path)
         if norm_path in ("/sys/kernel", "/sys/security.conf", "/"):
             raise TrappySecurityError(f"Cannot delete protected system path '{norm_path}'")
+        if self.current_ring > 0:
+            allowed_prefixes = ("/apps/", "/storage/", "/tmp/")
+            if not any(norm_path.startswith(p) for p in allowed_prefixes):
+                self.jailbreak_events.append({
+                    "type": "unauthorized_vfs_del",
+                    "path": norm_path,
+                    "ring": self.current_ring,
+                    "pid": self.active_pid,
+                    "time": time.time()
+                })
+                raise TrappySecurityError(f"Permission denied: Ring {self.current_ring} cannot delete '{norm_path}'. Deletes restricted to /apps/, /storage/, /tmp/")
         if norm_path in self.vfs:
             del self.vfs[norm_path]
             return True
@@ -423,7 +438,7 @@ class TrappyOSKernel:
 
         safe_url = validate_url(str(url))
         try:
-            req = urllib.request.Request(safe_url, headers={"User-Agent": "TrappyOSAppStore/1.5"})
+            req = urllib.request.Request(safe_url, headers={"User-Agent": "TrappyOSAppStore/1.6"})
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = resp.read().decode("utf-8", errors="ignore")
             return self.app_install(clean_id, data)
@@ -448,8 +463,9 @@ class TrappyOSKernel:
                 sub_toks = tokenize(app_info["code"])
                 sub_parser = Parser(sub_toks)
                 sub_ast = sub_parser.parse_program()
-                app_env = Environment(parent=self.interpreter.global_env)
+                app_env = Environment(parent=None)
                 self.interpreter.eval_stmt(sub_ast, app_env)
+                self.last_app_env = app_env
         finally:
             self.current_ring = prev_ring
             self.active_app_id = prev_app
@@ -531,7 +547,7 @@ class TrappyOSKernel:
             "device_type": self.screen_mode,
             "orientation": self.screen_orientation,
             "screen_resolution": f"{self.screen_width}x{self.screen_height}",
-            "cpu": "Trappy Silicon v1.5 Virtual SoC (8 Cores)",
+            "cpu": "Trappy Silicon v1.6 Virtual SoC (8 Cores)",
             "ram_total_mb": 4096,
             "ram_free_mb": 3120,
             "battery": dict(self.battery),
@@ -624,6 +640,14 @@ class TrappyOSKernel:
         return {"status": "ok", "mode": self.screen_mode, "rendered": True}
 
     def integrity_seal(self, component_name, key=""):
+        if self.current_ring > 0:
+            self.jailbreak_events.append({
+                "type": "unauthorized_integrity_seal_attempt",
+                "pid": self.active_pid,
+                "ring": self.current_ring,
+                "time": time.time()
+            })
+            raise TrappySecurityError(f"Anti-Jailbreak: Ring {self.current_ring} cannot generate or modify integrity seals")
         comp = str(component_name)
         k = str(key)
         content = ""
@@ -693,11 +717,30 @@ class TrappyOSKernel:
         return report
 
     def jailbreak_defend(self, action):
+        if self.current_ring > 0:
+            self.jailbreak_events.append({
+                "type": "unauthorized_defense_config_attempt",
+                "pid": self.active_pid,
+                "ring": self.current_ring,
+                "time": time.time()
+            })
+            raise TrappySecurityError(f"Anti-Jailbreak: Ring {self.current_ring} cannot modify jailbreak defense policy")
         act = str(action).lower().strip()
+        allowed_actions = ("panic", "isolate", "block", "log")
+        if act not in allowed_actions:
+            raise TrappySecurityError(f"Anti-Jailbreak: Invalid defense action '{act}'. Allowed: {', '.join(allowed_actions)}")
         self.settings["security.jailbreak_defense"] = act
         return act
 
     def exploit_guard(self, feature, state):
+        if self.current_ring > 0:
+            self.jailbreak_events.append({
+                "type": "unauthorized_exploit_guard_attempt",
+                "pid": self.active_pid,
+                "ring": self.current_ring,
+                "time": time.time()
+            })
+            raise TrappySecurityError(f"Anti-Jailbreak: Ring {self.current_ring} cannot configure exploit guards")
         feat = str(feature).lower().strip()
         val = int(state)
         self.settings["security.exploit_guards"][feat] = val
@@ -713,13 +756,19 @@ class TrappyOSKernel:
 
     def set_ring(self, ring):
         r = int(ring)
-        if self.current_ring > 0 and r == 0:
+        if r not in (0, 1, 2, 3):
+            raise TrappySecurityError(f"Anti-Jailbreak: Invalid protection ring {r}. Allowed rings: 0, 1, 2, 3.")
+        if self.current_ring > 0 and r < self.current_ring:
             self.jailbreak_events.append({
-                "type": "unauthorized_ring0_elevation",
+                "type": "unauthorized_ring_elevation",
                 "pid": self.active_pid,
+                "from_ring": self.current_ring,
+                "to_ring": r,
                 "time": time.time()
             })
-            raise TrappySecurityError("Anti-Jailbreak: Unauthorized Ring 0 elevation attempt blocked")
+            if r == 0:
+                raise TrappySecurityError("Anti-Jailbreak: Unauthorized Ring 0 elevation attempt blocked")
+            raise TrappySecurityError(f"Anti-Jailbreak: Unauthorized ring elevation attempt from Ring {self.current_ring} to Ring {r} blocked")
         self.current_ring = r
         return self.current_ring
 
@@ -772,10 +821,14 @@ class TrappyOSKernel:
         return True
 
     def defense_hook(self, name, action):
+        if self.current_ring > 0:
+            raise TrappySecurityError(f"Anti-Jailbreak: Ring {self.current_ring} cannot register defense hooks")
         self.custom_defense_hooks[str(name)] = str(action)
         return action
 
     def block_list(self, category, identifier):
+        if self.current_ring > 0:
+            raise TrappySecurityError(f"Anti-Jailbreak: Ring {self.current_ring} cannot modify security blocklists")
         self.blocked_items.add(str(identifier).strip())
         return len(self.blocked_items)
 
@@ -850,7 +903,8 @@ def tokenize(code):
         "os_integrity_seal", "os_integrity_verify", "os_jailbreak_check", "os_jailbreak_defend",
         "os_exploit_guard", "os_exploit_status", "os_ring_set", "os_ring_get",
         "os_perm_grant", "os_perm_revoke", "os_perm_check",
-        "os_firewall_rule", "os_defense_hook", "os_block_list"
+        "os_firewall_rule", "os_defense_hook", "os_block_list",
+        "card", "btn_modern", "toggle", "progress", "badge", "slider", "icon", "notify_toast", "ui_theme", "ui_ease"
     }
 
     while i < n:
@@ -1124,7 +1178,17 @@ class Parser:
             "OS_PERM_CHECK": self._parse_os_perm_check,
             "OS_FIREWALL_RULE": self._parse_os_firewall_rule,
             "OS_DEFENSE_HOOK": self._parse_os_defense_hook,
-            "OS_BLOCK_LIST": self._parse_os_block_list
+            "OS_BLOCK_LIST": self._parse_os_block_list,
+            "CARD": self._parse_card,
+            "BTN_MODERN": self._parse_btn_modern,
+            "TOGGLE": self._parse_toggle,
+            "PROGRESS": self._parse_progress,
+            "BADGE": self._parse_badge,
+            "SLIDER": self._parse_slider,
+            "ICON": self._parse_icon,
+            "NOTIFY_TOAST": self._parse_notify_toast,
+            "UI_THEME": self._parse_ui_theme,
+            "UI_EASE": self._parse_ui_ease
         }
 
     def peek(self):
@@ -2368,6 +2432,138 @@ class Parser:
         id_expr = self.parse_expr()
         return ("OS_BLOCK_LIST", cat_expr, id_expr, tok.line)
 
+    def _parse_card(self, tok):
+        self.consume("CARD")
+        x1 = self.parse_coord_part()
+        self.consume(":")
+        y1 = self.parse_coord_part()
+        x2 = self.parse_coord_part()
+        self.consume(":")
+        y2 = self.parse_coord_part()
+        radius = ("NUM", 12)
+        color = None
+        border_color = None
+        if self.peek().kind == "NUM":
+            radius = ("NUM", self.consume("NUM").val)
+        if self.peek().kind in ("NAME", "STR"):
+            color = self.parse_color()
+        if self.peek().kind in ("NAME", "STR"):
+            border_color = self.parse_color()
+        return ("CARD", x1, y1, x2, y2, radius, color, border_color, tok.line)
+
+    def _parse_btn_modern(self, tok):
+        self.consume("BTN_MODERN")
+        label = self.parse_atom()
+        x = self.parse_coord_part()
+        self.consume(":")
+        y = self.parse_coord_part()
+        w = self.parse_coord_part()
+        self.consume(":")
+        h = self.parse_coord_part()
+        self.consume("TRG")
+        fn_name = self.consume("NAME").val
+        color = None
+        if self.peek().kind in ("NAME", "STR"):
+            color = self.parse_color()
+        return ("BTN_MODERN", label, x, y, w, h, fn_name, color, tok.line)
+
+    def _parse_toggle(self, tok):
+        self.consume("TOGGLE")
+        var_name = self.consume("NAME").val
+        x = self.parse_coord_part()
+        self.consume(":")
+        y = self.parse_coord_part()
+        trg_fn = None
+        if self.peek().kind == "TRG":
+            self.consume("TRG")
+            trg_fn = self.consume("NAME").val
+        return ("TOGGLE", var_name, x, y, trg_fn, tok.line)
+
+    def _parse_progress(self, tok):
+        self.consume("PROGRESS")
+        val_expr = self.parse_atom()
+        max_expr = self.parse_atom()
+        x = self.parse_coord_part()
+        self.consume(":")
+        y = self.parse_coord_part()
+        w = self.parse_coord_part()
+        self.consume(":")
+        h = self.parse_coord_part()
+        fill_color = None
+        track_color = None
+        if self.peek().kind in ("NAME", "STR"):
+            fill_color = self.parse_color()
+        if self.peek().kind in ("NAME", "STR"):
+            track_color = self.parse_color()
+        return ("PROGRESS", val_expr, max_expr, x, y, w, h, fill_color, track_color, tok.line)
+
+    def _parse_badge(self, tok):
+        self.consume("BADGE")
+        text_expr = self.parse_atom()
+        x = self.parse_coord_part()
+        self.consume(":")
+        y = self.parse_coord_part()
+        variant = "info"
+        if self.peek().kind in ("NAME", "STR"):
+            variant = self.parse_color()
+        return ("BADGE", text_expr, x, y, variant, tok.line)
+
+    def _parse_slider(self, tok):
+        self.consume("SLIDER")
+        var_name = self.consume("NAME").val
+        min_expr = self.parse_atom()
+        max_expr = self.parse_atom()
+        x = self.parse_coord_part()
+        self.consume(":")
+        y = self.parse_coord_part()
+        w = self.parse_coord_part()
+        trg_fn = None
+        if self.peek().kind == "TRG":
+            self.consume("TRG")
+            trg_fn = self.consume("NAME").val
+        return ("SLIDER", var_name, min_expr, max_expr, x, y, w, trg_fn, tok.line)
+
+    def _parse_icon(self, tok):
+        self.consume("ICON")
+        name_tok = self.consume("NAME") if self.peek().kind == "NAME" else self.consume("STR")
+        icon_name = name_tok.val
+        x = self.parse_coord_part()
+        self.consume(":")
+        y = self.parse_coord_part()
+        size_expr = ("NUM", 20)
+        color = None
+        if self.peek().kind == "NUM":
+            size_expr = ("NUM", self.consume("NUM").val)
+        if self.peek().kind in ("NAME", "STR"):
+            color = self.parse_color()
+        return ("ICON", icon_name, x, y, size_expr, color, tok.line)
+
+    def _parse_notify_toast(self, tok):
+        self.consume("NOTIFY_TOAST")
+        title_expr = self.parse_atom()
+        msg_expr = self.parse_atom()
+        level = "info"
+        if self.peek().kind in ("NAME", "STR"):
+            level = self.consume(self.peek().kind).val
+        return ("NOTIFY_TOAST", title_expr, msg_expr, level, tok.line)
+
+    def _parse_ui_theme(self, tok):
+        self.consume("UI_THEME")
+        name_tok = self.consume("NAME") if self.peek().kind == "NAME" else self.consume("STR")
+        theme_name = name_tok.val
+        return ("UI_THEME", theme_name, tok.line)
+
+    def _parse_ui_ease(self, tok):
+        self.consume("UI_EASE")
+        target_var = self.consume("NAME").val
+        start_expr = self.parse_atom()
+        end_expr = self.parse_atom()
+        t_expr = self.parse_atom()
+        style = "linear"
+        if self.peek().kind in ("NAME", "STR"):
+            style = self.consume(self.peek().kind).val
+        return ("UI_EASE", target_var, start_expr, end_expr, t_expr, style, tok.line)
+
     def _parse_fos(self, tok):
         self.consume("FOS")
         nxt = self.peek()
@@ -2504,6 +2700,25 @@ class Parser:
             high = self.parse_atom()
             return ("RND", low, high, tok.line)
 
+        if tok.kind == "UI_EASE":
+            self.consume("UI_EASE")
+            has_paren = False
+            if self.peek().kind == "(":
+                self.consume("(")
+                has_paren = True
+            start_e = self.parse_atom()
+            self.consume(":")
+            end_e = self.parse_atom()
+            self.consume(":")
+            t_e = self.parse_atom()
+            style_e = ("STR", "linear")
+            if self.peek().kind == ":":
+                self.consume(":")
+                style_e = self.parse_atom()
+            if has_paren:
+                self.consume(")")
+            return ("UI_EASE_EXPR", start_e, end_e, t_e, style_e, tok.line)
+
         if tok.kind == "NUM":
             self.consume("NUM")
             return ("NUM", tok.val)
@@ -2593,6 +2808,25 @@ class Parser:
             high = self.parse_atom()
             return ("RND", low, high, tok.line)
 
+        if tok.kind == "UI_EASE":
+            self.consume("UI_EASE")
+            has_paren = False
+            if self.peek().kind == "(":
+                self.consume("(")
+                has_paren = True
+            start_e = self.parse_atom()
+            self.consume(":")
+            end_e = self.parse_atom()
+            self.consume(":")
+            t_e = self.parse_atom()
+            style_e = ("STR", "linear")
+            if self.peek().kind == ":":
+                self.consume(":")
+                style_e = self.parse_atom()
+            if has_paren:
+                self.consume(")")
+            return ("UI_EASE_EXPR", start_e, end_e, t_e, style_e, tok.line)
+
         if tok.kind == "NUM":
             self.consume("NUM")
             return ("NUM", tok.val)
@@ -2607,6 +2841,25 @@ class Parser:
         if tok.kind == "STR":
             self.consume("STR")
             return ("STR", tok.val)
+
+        if tok.kind == "UI_EASE":
+            self.consume("UI_EASE")
+            has_paren = False
+            if self.peek().kind == "(":
+                self.consume("(")
+                has_paren = True
+            start_e = self.parse_atom()
+            self.consume(":")
+            end_e = self.parse_atom()
+            self.consume(":")
+            t_e = self.parse_atom()
+            style_e = ("STR", "linear")
+            if self.peek().kind == ":":
+                self.consume(":")
+                style_e = self.parse_atom()
+            if has_paren:
+                self.consume(")")
+            return ("UI_EASE_EXPR", start_e, end_e, t_e, style_e, tok.line)
 
         if tok.kind == "(":
             self.consume("(")
@@ -2663,6 +2916,25 @@ class Parser:
                 self.consume(")")
                 return ("CALL", name, args, tok.line)
             return ("VAR", name, tok.line)
+        if tok.kind == "UI_EASE":
+            self.consume("UI_EASE")
+            has_paren = False
+            if self.peek().kind == "(":
+                self.consume("(")
+                has_paren = True
+            start_e = self.parse_atom()
+            self.consume(":")
+            end_e = self.parse_atom()
+            self.consume(":")
+            t_e = self.parse_atom()
+            style_e = ("STR", "linear")
+            if self.peek().kind == ":":
+                self.consume(":")
+                style_e = self.parse_atom()
+            if has_paren:
+                self.consume(")")
+            return ("UI_EASE_EXPR", start_e, end_e, t_e, style_e, tok.line)
+
         if tok.kind == "(":
             self.consume("(")
             node = self.parse_expr()
@@ -2727,6 +2999,118 @@ class Environment:
             return self.parent.delete(name)
         return False
 
+def get_rounded_rect_points(x1, y1, x2, y2, r):
+    x1, x2 = min(x1, x2), max(x1, x2)
+    y1, y2 = min(y1, y2), max(y1, y2)
+    r = max(1, min(r, abs(x2 - x1) / 2, abs(y2 - y1) / 2))
+    return [
+        x1 + r, y1,
+        x2 - r, y1,
+        x2, y1,
+        x2, y1 + r,
+        x2, y2 - r,
+        x2, y2,
+        x2 - r, y2,
+        x1 + r, y2,
+        x1, y2,
+        x1, y2 - r,
+        x1, y1 + r,
+        x1, y1,
+    ]
+
+def ui_ease_calc(start, end, t, style="linear"):
+    t = max(0.0, min(1.0, float(t)))
+    start = float(start)
+    end = float(end)
+    diff = end - start
+    
+    style = str(style).lower().strip()
+    if style in ("ease_in", "in"):
+        factor = t * t
+    elif style in ("ease_out", "out"):
+        factor = 1.0 - (1.0 - t) * (1.0 - t)
+    elif style in ("ease_in_out", "in_out"):
+        factor = 0.5 * (1.0 - math.cos(math.pi * t))
+    elif style == "bounce":
+        if t < (1.0 / 2.75):
+            factor = 7.5625 * t * t
+        elif t < (2.0 / 2.75):
+            t -= (1.5 / 2.75)
+            factor = 7.5625 * t * t + 0.75
+        elif t < (2.5 / 2.75):
+            t -= (2.25 / 2.75)
+            factor = 7.5625 * t * t + 0.9375
+        else:
+            t -= (2.625 / 2.75)
+            factor = 7.5625 * t * t + 0.984375
+    else:
+        factor = t
+        
+    return start + diff * factor
+
+THEMES = {
+    "dark": {
+        "bg": "#121214",
+        "card_bg": "#18181b",
+        "card_border": "#27272a",
+        "text": "#f4f4f5",
+        "accent": "#06b6d4",
+        "accent_text": "#000000",
+        "track": "#27272a",
+        "track_fill": "#06b6d4",
+        "button_bg": "#27272a",
+        "button_fg": "#ffffff"
+    },
+    "cyber": {
+        "bg": "#050811",
+        "card_bg": "#0d1527",
+        "card_border": "#00ffcc",
+        "text": "#00ffcc",
+        "accent": "#ff0055",
+        "accent_text": "#ffffff",
+        "track": "#1e293b",
+        "track_fill": "#00ffcc",
+        "button_bg": "#0d1527",
+        "button_fg": "#00ffcc"
+    },
+    "glass": {
+        "bg": "#0f172a",
+        "card_bg": "#1e293b",
+        "card_border": "#334155",
+        "text": "#e2e8f0",
+        "accent": "#38bdf8",
+        "accent_text": "#000000",
+        "track": "#334155",
+        "track_fill": "#38bdf8",
+        "button_bg": "#334155",
+        "button_fg": "#ffffff"
+    },
+    "light": {
+        "bg": "#f8fafc",
+        "card_bg": "#ffffff",
+        "card_border": "#e2e8f0",
+        "text": "#0f172a",
+        "accent": "#0284c7",
+        "accent_text": "#ffffff",
+        "track": "#e2e8f0",
+        "track_fill": "#0284c7",
+        "button_bg": "#f1f5f9",
+        "button_fg": "#0f172a"
+    },
+    "nord": {
+        "bg": "#2e3440",
+        "card_bg": "#3b4252",
+        "card_border": "#4c566a",
+        "text": "#eceff4",
+        "accent": "#88c0d0",
+        "accent_text": "#2e3440",
+        "track": "#434c5e",
+        "track_fill": "#88c0d0",
+        "button_bg": "#434c5e",
+        "button_fg": "#eceff4"
+    }
+}
+
 class TrappyGUI:
     def __init__(self, title, width, height, mode="main"):
         if tk is None:
@@ -2762,6 +3146,9 @@ class TrappyInterpreter:
         self.safe_mode = safe_mode or (os.environ.get("TRAPPY_SAFE_MODE") == "1")
         self.global_env = Environment()
         self.functions = {}
+        self.current_theme = "dark"
+        self.ui_elements = []
+        self.last_app_env = None
         self.del_functions = {}
         self.blueprints = {}
         self.memory_blocks = {}
@@ -2927,7 +3314,17 @@ class TrappyInterpreter:
             "OS_PERM_CHECK": self._eval_os_perm_check,
             "OS_FIREWALL_RULE": self._eval_os_firewall_rule,
             "OS_DEFENSE_HOOK": self._eval_os_defense_hook,
-            "OS_BLOCK_LIST": self._eval_os_block_list
+            "OS_BLOCK_LIST": self._eval_os_block_list,
+            "CARD": self._eval_card,
+            "BTN_MODERN": self._eval_btn_modern,
+            "TOGGLE": self._eval_toggle,
+            "PROGRESS": self._eval_progress,
+            "BADGE": self._eval_badge,
+            "SLIDER": self._eval_slider,
+            "ICON": self._eval_icon,
+            "NOTIFY_TOAST": self._eval_notify_toast,
+            "UI_THEME": self._eval_ui_theme,
+            "UI_EASE": self._eval_ui_ease
         }
 
     def run(self, ast):
@@ -4136,6 +4533,14 @@ class TrappyInterpreter:
             ma = self.eval_expr(max_e, env)
             return max(mi, min(v, ma))
 
+        if kind == "UI_EASE_EXPR":
+            _, start_e, end_e, t_e, style_e, line = expr
+            start_val = float(self.eval_expr(start_e, env))
+            end_val = float(self.eval_expr(end_e, env))
+            t_val = float(self.eval_expr(t_e, env))
+            style_val = str(self.eval_expr(style_e, env)) if isinstance(style_e, tuple) else str(style_e)
+            return ui_ease_calc(start_val, end_val, t_val, style_val)
+
         if kind == "BINOP":
             _, op, left_expr, right_expr = expr
             left = self.eval_expr(left_expr, env)
@@ -4170,6 +4575,14 @@ class TrappyInterpreter:
 
         if kind == "CALL":
             _, name, args, line = expr
+            if name == "ui_ease":
+                if len(args) < 3:
+                    raise TrappyError("ui_ease requires at least 3 arguments: start, end, t, [style]", line)
+                start_val = float(self.eval_expr(args[0], env))
+                end_val = float(self.eval_expr(args[1], env))
+                t_val = float(self.eval_expr(args[2], env))
+                style_val = str(self.eval_expr(args[3], env)) if len(args) > 3 else "linear"
+                return ui_ease_calc(start_val, end_val, t_val, style_val)
             return self.call_function(name, args, env, line)
 
         return 0
@@ -4472,6 +4885,365 @@ class TrappyInterpreter:
         cat = str(self.eval_expr(cat_expr, env))
         identifier = str(self.eval_expr(id_expr, env))
         self.os_kernel.block_list(cat, identifier)
+
+    def _eval_card(self, stmt, env):
+        _, x1_e, y1_e, x2_e, y2_e, r_e, col, b_col, _ = stmt
+        x1 = self.eval_coord(x1_e, env)
+        y1 = self.eval_coord(y1_e, env)
+        x2 = self.eval_coord(x2_e, env)
+        y2 = self.eval_coord(y2_e, env)
+        r = int(self.eval_coord(r_e, env)) if r_e else 12
+        theme = THEMES.get(self.current_theme, THEMES["dark"])
+        fill_col = col if col else theme["card_bg"]
+        outline_col = b_col if b_col else theme["card_border"]
+
+        self.ui_elements.append({
+            "type": "card",
+            "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+            "radius": r, "fill": fill_col, "outline": outline_col
+        })
+
+        if self.gui and self.gui.canvas:
+            shadow_pts = get_rounded_rect_points(x1 + 3, y1 + 3, x2 + 3, y2 + 3, r)
+            self.gui.canvas.create_polygon(shadow_pts, smooth=True, fill="#050508", outline="")
+            pts = get_rounded_rect_points(x1, y1, x2, y2, r)
+            self.gui.canvas.create_polygon(pts, smooth=True, fill=fill_col, outline=outline_col, width=1)
+
+    def _eval_btn_modern(self, stmt, env):
+        _, label_expr, x_expr, y_expr, w_expr, h_expr, fn_name, color, _ = stmt
+        label = str(self.eval_expr(label_expr, env))
+        x = self.eval_coord(x_expr, env)
+        y = self.eval_coord(y_expr, env)
+        w = self.eval_coord(w_expr, env)
+        h = self.eval_coord(h_expr, env)
+        theme = THEMES.get(self.current_theme, THEMES["dark"])
+        bg_col = color if color else theme["button_bg"]
+        fg_col = theme["button_fg"]
+
+        self.ui_elements.append({
+            "type": "btn_modern",
+            "label": label, "x": x, "y": y, "w": w, "h": h,
+            "action": fn_name, "bg": bg_col
+        })
+
+        if self.gui and self.gui.root:
+            btn = tk.Button(
+                self.gui.root,
+                text=label,
+                bg=bg_col,
+                fg=fg_col,
+                activebackground=theme["accent"],
+                activeforeground=theme.get("accent_text", "#000000"),
+                relief="flat",
+                bd=0,
+                font=("Segoe UI", 9, "bold"),
+                cursor="hand2",
+                command=lambda: self.trigger_action(fn_name)
+            )
+            btn.place(x=x, y=y, width=w, height=h)
+
+    def _eval_toggle(self, stmt, env):
+        _, var_name, x_expr, y_expr, trg_fn, _ = stmt
+        x = self.eval_coord(x_expr, env)
+        y = self.eval_coord(y_expr, env)
+        curr_val = 1 if env.get(var_name, 0) else 0
+        theme = THEMES.get(self.current_theme, THEMES["dark"])
+
+        self.ui_elements.append({
+            "type": "toggle",
+            "var": var_name,
+            "x": x, "y": y,
+            "state": curr_val,
+            "trigger": trg_fn
+        })
+
+        if self.gui and self.gui.canvas:
+            track_w, track_h = 44, 24
+            track_col = theme["accent"] if curr_val else theme["track"]
+            knob_x = x + 31 if curr_val else x + 13
+            track_pts = get_rounded_rect_points(x, y, x + track_w, y + track_h, 12)
+            track_id = self.gui.canvas.create_polygon(track_pts, smooth=True, fill=track_col, outline="")
+            knob_id = self.gui.canvas.create_oval(knob_x - 9, y + 3, knob_x + 9, y + 21, fill="#ffffff", outline="")
+
+            def on_click(e):
+                new_val = 0 if env.get(var_name, 0) else 1
+                env.set(var_name, new_val)
+                if trg_fn:
+                    self.trigger_action(trg_fn)
+
+            self.gui.canvas.tag_bind(track_id, "<Button-1>", on_click)
+            self.gui.canvas.tag_bind(knob_id, "<Button-1>", on_click)
+
+    def _eval_progress(self, stmt, env):
+        _, val_expr, max_expr, x_expr, y_expr, w_expr, h_expr, f_col, t_col, _ = stmt
+        val = float(self.eval_expr(val_expr, env))
+        max_val = float(self.eval_expr(max_expr, env))
+        if max_val <= 0:
+            max_val = 100.0
+        pct = max(0.0, min(1.0, val / max_val))
+        x = self.eval_coord(x_expr, env)
+        y = self.eval_coord(y_expr, env)
+        w = self.eval_coord(w_expr, env)
+        h = self.eval_coord(h_expr, env)
+        theme = THEMES.get(self.current_theme, THEMES["dark"])
+        track_col = t_col if t_col else theme["track"]
+        fill_col = f_col if f_col else theme["track_fill"]
+
+        self.ui_elements.append({
+            "type": "progress",
+            "val": val, "max": max_val, "pct": pct,
+            "x": x, "y": y, "w": w, "h": h
+        })
+
+        if self.gui and self.gui.canvas:
+            r = min(h / 2, 8)
+            track_pts = get_rounded_rect_points(x, y, x + w, y + h, r)
+            self.gui.canvas.create_polygon(track_pts, smooth=True, fill=track_col, outline="")
+            fill_w = max(r * 2, w * pct) if pct > 0.05 else (w * pct)
+            if fill_w > 0:
+                fill_pts = get_rounded_rect_points(x, y, x + fill_w, y + h, r)
+                self.gui.canvas.create_polygon(fill_pts, smooth=True, fill=fill_col, outline="")
+            self.gui.canvas.create_text(x + w / 2, y + h / 2, text=f"{int(pct * 100)}%", fill="#ffffff", font=("Segoe UI", int(max(7, h * 0.6)), "bold"))
+
+    def _eval_badge(self, stmt, env):
+        _, text_expr, x_expr, y_expr, variant, _ = stmt
+        text = str(self.eval_expr(text_expr, env))
+        x = self.eval_coord(x_expr, env)
+        y = self.eval_coord(y_expr, env)
+        
+        var_colors = {
+            "secure": ("#064e3b", "#10b981"),
+            "success": ("#064e3b", "#10b981"),
+            "warning": ("#451a03", "#f59e0b"),
+            "danger": ("#450a0a", "#ef4444"),
+            "info": ("#082f49", "#06b6d4"),
+            "neutral": ("#18181b", "#71717a")
+        }
+        bg_col, dot_col = var_colors.get(str(variant).lower(), ("#18181b", "#06b6d4"))
+
+        self.ui_elements.append({
+            "type": "badge",
+            "text": text, "x": x, "y": y, "variant": variant
+        })
+
+        if self.gui and self.gui.canvas:
+            bw = len(text) * 8 + 28
+            bh = 22
+            pill_pts = get_rounded_rect_points(x, y, x + bw, y + bh, 11)
+            self.gui.canvas.create_polygon(pill_pts, smooth=True, fill=bg_col, outline=dot_col, width=1)
+            self.gui.canvas.create_oval(x + 8, y + 7, x + 16, y + 15, fill=dot_col, outline="")
+            self.gui.canvas.create_text(x + 22, y + bh / 2, text=text, fill="#ffffff", font=("Segoe UI", 8, "bold"), anchor="w")
+
+    def _eval_slider(self, stmt, env):
+        _, var_name, min_expr, max_expr, x_expr, y_expr, w_expr, trg_fn, _ = stmt
+        min_v = float(self.eval_expr(min_expr, env))
+        max_v = float(self.eval_expr(max_expr, env))
+        curr_v = float(env.get(var_name, min_v))
+        x = self.eval_coord(x_expr, env)
+        y = self.eval_coord(y_expr, env)
+        w = self.eval_coord(w_expr, env)
+        theme = THEMES.get(self.current_theme, THEMES["dark"])
+        pct = (curr_v - min_v) / (max_v - min_v) if max_v > min_v else 0.0
+        pct = max(0.0, min(1.0, pct))
+
+        self.ui_elements.append({
+            "type": "slider",
+            "var": var_name, "min": min_v, "max": max_v, "val": curr_v,
+            "x": x, "y": y, "w": w, "trigger": trg_fn
+        })
+
+        if self.gui and self.gui.canvas:
+            self.gui.canvas.create_line(x, y + 8, x + w, y + 8, fill=theme["track"], width=6, capstyle="round")
+            if pct > 0:
+                self.gui.canvas.create_line(x, y + 8, x + w * pct, y + 8, fill=theme["accent"], width=6, capstyle="round")
+            tx = x + w * pct
+            thumb = self.gui.canvas.create_oval(tx - 8, y, tx + 8, y + 16, fill="#ffffff", outline=theme["accent"], width=2)
+
+            def on_drag(event):
+                new_pct = max(0.0, min(1.0, (event.x - x) / float(w)))
+                new_v = min_v + new_pct * (max_v - min_v)
+                env.set(var_name, round(new_v, 2))
+                if trg_fn:
+                    self.trigger_action(trg_fn)
+
+            self.gui.canvas.tag_bind(thumb, "<B1-Motion>", on_drag)
+
+    def _eval_icon(self, stmt, env):
+        _, icon_name, x_expr, y_expr, size_expr, color, _ = stmt
+        x = self.eval_coord(x_expr, env)
+        y = self.eval_coord(y_expr, env)
+        s = int(self.eval_coord(size_expr, env)) if size_expr else 20
+        theme = THEMES.get(self.current_theme, THEMES["dark"])
+        col = color if color else theme["text"]
+        name = str(icon_name).lower().strip()
+
+        self.ui_elements.append({
+            "type": "icon",
+            "name": name, "x": x, "y": y, "size": s, "color": col
+        })
+
+        if self.gui and self.gui.canvas:
+            self._render_vector_icon(name, x, y, s, col)
+
+    def _render_vector_icon(self, name, x, y, s, col):
+        if not (self.gui and self.gui.canvas):
+            return
+        canvas = self.gui.canvas
+        if name == "shield":
+            pts = [
+                x + s * 0.5, y,
+                x + s, y + s * 0.3,
+                x + s * 0.85, y + s * 0.75,
+                x + s * 0.5, y + s,
+                x + s * 0.15, y + s * 0.75,
+                x, y + s * 0.3
+            ]
+            canvas.create_polygon(pts, smooth=True, fill="", outline=col, width=2)
+        elif name == "lock":
+            canvas.create_rectangle(x + s * 0.15, y + s * 0.45, x + s * 0.85, y + s * 0.95, fill=col, outline="")
+            canvas.create_arc(x + s * 0.25, y + s * 0.1, x + s * 0.75, y + s * 0.6, start=0, extent=180, style="arc", outline=col, width=2)
+            canvas.create_oval(x + s * 0.45, y + s * 0.6, x + s * 0.55, y + s * 0.75, fill="#000000", outline="")
+        elif name == "unlock":
+            canvas.create_rectangle(x + s * 0.15, y + s * 0.45, x + s * 0.85, y + s * 0.95, fill=col, outline="")
+            canvas.create_arc(x + s * 0.25, y, x + s * 0.75, y + s * 0.5, start=0, extent=180, style="arc", outline=col, width=2)
+            canvas.create_oval(x + s * 0.45, y + s * 0.6, x + s * 0.55, y + s * 0.75, fill="#000000", outline="")
+        elif name == "gear":
+            cx, cy, r = x + s * 0.5, y + s * 0.5, s * 0.35
+            canvas.create_oval(cx - r, cy - r, cx + r, cy + r, outline=col, width=2)
+            canvas.create_oval(cx - r * 0.4, cy - r * 0.4, cx + r * 0.4, cy + r * 0.4, fill=col, outline="")
+            for a in range(8):
+                ang = a * math.pi / 4.0
+                x1 = cx + (r - 2) * math.cos(ang)
+                y1 = cy + (r - 2) * math.sin(ang)
+                x2 = cx + (r + 4) * math.cos(ang)
+                y2 = cy + (r + 4) * math.sin(ang)
+                canvas.create_line(x1, y1, x2, y2, fill=col, width=3)
+        elif name == "terminal":
+            canvas.create_line(x + s * 0.1, y + s * 0.25, x + s * 0.4, y + s * 0.5, fill=col, width=2)
+            canvas.create_line(x + s * 0.4, y + s * 0.5, x + s * 0.1, y + s * 0.75, fill=col, width=2)
+            canvas.create_line(x + s * 0.5, y + s * 0.75, x + s * 0.9, y + s * 0.75, fill=col, width=2)
+        elif name == "wifi":
+            cx, cy = x + s * 0.5, y + s * 0.85
+            canvas.create_oval(cx - 2, cy - 2, cx + 2, cy + 2, fill=col, outline="")
+            canvas.create_arc(x + s * 0.2, y + s * 0.35, x + s * 0.8, y + s * 0.95, start=45, extent=90, style="arc", outline=col, width=2)
+            canvas.create_arc(x, y + s * 0.05, x + s, y + s * 1.05, start=45, extent=90, style="arc", outline=col, width=2)
+        elif name == "battery":
+            canvas.create_rectangle(x + s * 0.05, y + s * 0.25, x + s * 0.85, y + s * 0.75, outline=col, width=2)
+            canvas.create_rectangle(x + s * 0.85, y + s * 0.4, x + s * 0.95, y + s * 0.6, fill=col, outline="")
+            canvas.create_rectangle(x + s * 0.15, y + s * 0.35, x + s * 0.6, y + s * 0.65, fill=col, outline="")
+        elif name == "cpu":
+            canvas.create_rectangle(x + s * 0.25, y + s * 0.25, x + s * 0.75, y + s * 0.75, outline=col, width=2)
+            canvas.create_rectangle(x + s * 0.38, y + s * 0.38, x + s * 0.62, y + s * 0.62, fill=col, outline="")
+            for p in (0.35, 0.65):
+                canvas.create_line(x + s * p, y, x + s * p, y + s * 0.25, fill=col, width=2)
+                canvas.create_line(x + s * p, y + s * 0.75, x + s * p, y + s, fill=col, width=2)
+                canvas.create_line(x, y + s * p, x + s * 0.25, y + s * p, fill=col, width=2)
+                canvas.create_line(x + s * 0.75, y + s * p, x + s, y + s * p, fill=col, width=2)
+        elif name == "check":
+            canvas.create_line(x + s * 0.15, y + s * 0.55, x + s * 0.4, y + s * 0.8, fill=col, width=3)
+            canvas.create_line(x + s * 0.4, y + s * 0.8, x + s * 0.85, y + s * 0.25, fill=col, width=3)
+        elif name == "cross":
+            canvas.create_line(x + s * 0.2, y + s * 0.2, x + s * 0.8, y + s * 0.8, fill=col, width=3)
+            canvas.create_line(x + s * 0.8, y + s * 0.2, x + s * 0.2, y + s * 0.8, fill=col, width=3)
+        elif name == "star":
+            cx, cy = x + s * 0.5, y + s * 0.5
+            r1, r2 = s * 0.5, s * 0.22
+            star_pts = []
+            for k in range(10):
+                ang = k * math.pi / 5.0 - math.pi / 2.0
+                r = r1 if k % 2 == 0 else r2
+                star_pts.extend([cx + r * math.cos(ang), cy + r * math.sin(ang)])
+            canvas.create_polygon(star_pts, fill=col, outline="")
+        elif name == "bell":
+            pts = [
+                x + s * 0.5, y + s * 0.1,
+                x + s * 0.8, y + s * 0.7,
+                x + s * 0.2, y + s * 0.7
+            ]
+            canvas.create_polygon(pts, fill="", outline=col, width=2)
+            canvas.create_line(x + s * 0.15, y + s * 0.7, x + s * 0.85, y + s * 0.7, fill=col, width=2)
+            canvas.create_oval(x + s * 0.42, y + s * 0.75, x + s * 0.58, y + s * 0.9, fill=col, outline="")
+        elif name == "user":
+            cx, cy = x + s * 0.5, y + s * 0.35
+            canvas.create_oval(cx - s * 0.2, cy - s * 0.2, cx + s * 0.2, cy + s * 0.2, fill=col, outline="")
+            canvas.create_arc(x + s * 0.1, y + s * 0.45, x + s * 0.9, y + s * 1.1, start=0, extent=180, style="chord", fill=col, outline="")
+        elif name == "folder":
+            f_pts = [
+                x + s * 0.1, y + s * 0.25,
+                x + s * 0.45, y + s * 0.25,
+                x + s * 0.55, y + s * 0.4,
+                x + s * 0.9, y + s * 0.4,
+                x + s * 0.9, y + s * 0.85,
+                x + s * 0.1, y + s * 0.85
+            ]
+            canvas.create_polygon(f_pts, fill="", outline=col, width=2)
+        elif name == "play":
+            p_pts = [
+                x + s * 0.2, y + s * 0.15,
+                x + s * 0.85, y + s * 0.5,
+                x + s * 0.2, y + s * 0.85
+            ]
+            canvas.create_polygon(p_pts, fill=col, outline="")
+        else:
+            canvas.create_oval(x + s * 0.2, y + s * 0.2, x + s * 0.8, y + s * 0.8, fill=col, outline="")
+
+    def _eval_notify_toast(self, stmt, env):
+        _, title_expr, msg_expr, level, _ = stmt
+        title = str(self.eval_expr(title_expr, env))
+        msg = str(self.eval_expr(msg_expr, env))
+        lvl = str(level).lower()
+
+        if self.os_kernel:
+            self.os_kernel.ui_notify(title, msg, lvl)
+
+        self.ui_elements.append({
+            "type": "notify_toast",
+            "title": title, "msg": msg, "level": lvl
+        })
+
+        if self.gui and self.gui.canvas:
+            cw = int(self.gui.canvas.cget("width"))
+            tx = cw - 280
+            ty = 20
+            accent_col = "#ef4444" if lvl == "danger" else ("#f59e0b" if lvl == "warning" else "#06b6d4")
+            pts = get_rounded_rect_points(tx, ty, tx + 260, ty + 60, 8)
+            t_bg = self.gui.canvas.create_polygon(pts, smooth=True, fill="#18181b", outline="#27272a", width=1)
+            strip_pts = get_rounded_rect_points(tx, ty, tx + 6, ty + 60, 4)
+            t_strip = self.gui.canvas.create_polygon(strip_pts, smooth=True, fill=accent_col, outline="")
+            t_title = self.gui.canvas.create_text(tx + 16, ty + 18, text=title, fill="#f4f4f5", font=("Segoe UI", 9, "bold"), anchor="w")
+            t_msg = self.gui.canvas.create_text(tx + 16, ty + 38, text=msg[:32], fill="#a1a1aa", font=("Segoe UI", 8), anchor="w")
+
+            if self.gui.root:
+                def dismiss():
+                    try:
+                        self.gui.canvas.delete(t_bg)
+                        self.gui.canvas.delete(t_strip)
+                        self.gui.canvas.delete(t_title)
+                        self.gui.canvas.delete(t_msg)
+                    except Exception:
+                        pass
+                self.gui.root.after(3000, dismiss)
+
+    def _eval_ui_theme(self, stmt, env):
+        _, theme_name, _ = stmt
+        name = str(theme_name).lower().strip()
+        if name in THEMES:
+            self.current_theme = name
+        else:
+            self.current_theme = "dark"
+        if self.gui and self.gui.canvas:
+            theme = THEMES[self.current_theme]
+            self.gui.canvas.configure(bg=theme["bg"])
+
+    def _eval_ui_ease(self, stmt, env):
+        _, target_var, start_e, end_e, t_e, style, _ = stmt
+        start = float(self.eval_expr(start_e, env))
+        end = float(self.eval_expr(end_e, env))
+        t = float(self.eval_expr(t_e, env))
+        res = ui_ease_calc(start, end, t, style)
+        env.set(target_var, res)
+        return res
+
 
 def run_trappy(code, safe_mode=False):
     tokens = tokenize(code)

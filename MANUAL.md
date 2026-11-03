@@ -1,4 +1,4 @@
-# Trappy Programming Language - Official Reference Manual (v1.15.0 Release)
+# Trappy Programming Language - Official Reference Manual (v1.6.0 Release)
 
 Copyright (c) Trappy Language Project. All rights reserved.  
 Official File Extension: `.trappy`  
@@ -37,6 +37,8 @@ Standalone Studio: `TrappyIDE.exe`
 21. [Self-Hosting Bootstrapping & The Road to v2](#21-self-hosting-bootstrapping--the-road-to-v2)
 22. [Full String Processing & Reflection Suite](#22-full-string-processing--reflection-suite)
 23. [Modern Control Flow & Error Handling](#23-modern-control-flow--error-handling)
+24. [OS Development & Security Architecture](#24-os-development--security-architecture)
+25. [Modern UI/GUI Suite](#25-modern-uigui-suite)
 
 ---
 
@@ -503,3 +505,60 @@ lslice items:0:3 tit sub_list
 dhas player:"score" tit has_score
 ddel player:"temp_tag"
 ```
+
+
+---
+
+## 24. OS Development & Security Architecture
+
+Trappy includes an operating system microkernel and security framework for building, testing, and defending operating systems:
+
+```trappy
+trst
+    os_boot "AegisOS" "1.6.0"
+    os_screen_mode "computer" "landscape"
+    os_exploit_guard "canary" 1
+    os_integrity_seal "/etc/hostname" "secret_salt"
+    os_vfs_write "/storage/app.dat" "system state"
+    os_jailbreak_check tit report
+    os_shutdown
+tren
+```
+
+* **Protection Rings:** Ring 0 (Kernel Init), Ring 1 (Device Drivers), Ring 2 (System Services), Ring 3 (Userland Applications).
+* **Negative Ring & Underflow Protection:** Enforced rings 0..3; attempts to set negative rings or escalate privilege from userland are blocked.
+* **Integrity Seals & Anti-Jailbreak:** SHA-256 integrity verification detects unauthorized component modifications.
+* **Exploit Guards:** Emulated memory boundary canaries and execution filters block buffer overflows and shell injection.
+
+---
+
+## 25. Modern UI/GUI Suite
+
+Trappy v1.6 introduces modern, fluid graphical interface components:
+
+```trappy
+trst
+    cwin "Trappy Dashboard" 800:600 main
+    ui_theme "cyber"
+    card 50:50 750:550 16 "#0d1527" "#00ffcc"
+    badge "SECURE NODE" 80:80 "secure"
+    icon "shield" 80:120 28 "#00ffcc"
+    progress 85 100 80:180 300:20 "#ff0055" "#1e293b"
+    slider brightness 0 100 80:230 300 trg on_slide
+    toggle network_online 80:280 trg on_net_toggle
+    btn_modern "Reboot Kernel" 80:330 160:42 trg on_reboot "#ff0055"
+    notify_toast "Security Status" "All subsystems nominal" "info"
+    ui_ease anim_y 0 300 0.5 "ease_out"
+tren
+```
+
+* `card`: Rounded container card with drop shadow and outline.
+* `btn_modern`: Modern flat button with hover styling and callback trigger.
+* `toggle`: Smooth pill switch track with circular knob.
+* `progress`: Rounded progress bar with percentage readout.
+* `badge`: Pill status badge with indicator dot.
+* `slider`: Interactive value slider with tracking line and draggable thumb.
+* `icon`: 15 canvas vector glyph icons without external images.
+* `notify_toast`: Floating notification card with auto-dismiss.
+* `ui_theme`: Active palette switching (dark, cyber, glass, light, nord).
+* `ui_ease`: High-precision animation easing (linear, ease_in, ease_out, ease_in_out, bounce).

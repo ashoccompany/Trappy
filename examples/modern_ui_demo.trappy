@@ -1,0 +1,43 @@
+trst
+    cwin "Trappy v1.6 Modern UI & OS Showcase" 800:600 main
+    ui_theme cyber
+
+    card 30:30 770:570 16 "#0d1527" "#00ffcc"
+
+    badge "NODE SECURE" 60:60 "secure"
+    badge "ENCRYPTED" 210:60 "info"
+    badge "FIREWALL" 340:60 "warning"
+
+    icon "shield" 60:110 32 "#00ffcc"
+    icon "terminal" 110:110 32 "#06b6d4"
+    icon "wifi" 160:110 32 "#10b981"
+    icon "battery" 210:110 32 "#f59e0b"
+    icon "gear" 260:110 32 "#e2e8f0"
+    icon "lock" 310:110 32 "#38bdf8"
+
+    progress 80 100 60:180 320:24 "#00ffcc" "#1e293b"
+    progress 45 100 60:220 320:24 "#ff0055" "#1e293b"
+
+    mh 65 eq sys_volume
+    slider sys_volume 0 100 60:280 320
+
+    mh 1 eq net_shield
+    toggle net_shield 60:330
+
+    fn on_reboot
+        notify_toast "Kernel Alert" "Rebooting Supervisor..." "warning"
+    tren
+
+    fn on_seal
+        notify_toast "Integrity Seal" "VFS cryptographically sealed" "info"
+    tren
+
+    btn_modern "Reboot Kernel" 60:390 150:40 trg on_reboot "#ff0055"
+    btn_modern "Verify Seals" 230:390 150:40 trg on_seal "#06b6d4"
+
+    notify_toast "AegisOS v1.6 Online" "Microkernel running in Ring 0" "info"
+
+    ui_ease intro_y 0 100 0.75 "ease_out"
+    gan "UI initialization complete. Ease offset:"
+    gan intro_y
+tren

@@ -59,7 +59,8 @@ ASSIST_KEYWORDS = [
     "os_integrity_seal", "os_integrity_verify", "os_jailbreak_check", "os_jailbreak_defend",
     "os_exploit_guard", "os_exploit_status", "os_ring_set", "os_ring_get",
     "os_perm_grant", "os_perm_revoke", "os_perm_check",
-    "os_firewall_rule", "os_defense_hook", "os_block_list"
+    "os_firewall_rule", "os_defense_hook", "os_block_list",
+    "card", "btn_modern", "toggle", "progress", "badge", "slider", "icon", "notify_toast", "ui_theme", "ui_ease"
 ]
 
 HIGHLIGHT_KEYWORDS = list(set(ASSIST_KEYWORDS + [
@@ -67,6 +68,16 @@ HIGHLIGHT_KEYWORDS = list(set(ASSIST_KEYWORDS + [
 ]))
 
 MANUAL_DATABASE = [
+    ("card", 'card x1:y1 x2:y2 [radius] [color] [border_color]', "Renders a modern container card with rounded corners, customizable border outline, and subtle drop shadow.", 'card 50:50 350:250 16 "#18181b" "#27272a"'),
+    ("btn_modern", 'btn_modern label x:y w:h trg fn_name [color]', "Renders a modern styled flat button with hover styling, rounded corners, and click action trigger.", 'btn_modern "Launch OS" 100:100 140:40 trg on_click "#06b6d4"'),
+    ("toggle", 'toggle var_name x:y [trg fn_name]', "Renders an interactive modern toggle switch with a smooth track pill and circular knob.", 'toggle wifi_enabled 200:150 trg on_toggle'),
+    ("progress", 'progress val_expr max_expr x:y w:h [fill_color] [track_color]', "Renders a modern progress bar with smooth rounded pill track, active fill percentage, and centered percentage text.", 'progress 75 100 50:300 200:20 "#10b981" "#27272a"'),
+    ("badge", 'badge text x:y [variant]', "Renders a status pill badge with a colored indicator dot (variants: secure, warning, danger, info, neutral).", 'badge "SECURE" 30:30 "secure"'),
+    ("slider", 'slider var_name min_val max_val x:y w [trg fn_name]', "Renders an interactive numerical slider with a rounded track, active progress fill, and draggable thumb knob.", 'slider brightness 0 100 50:350 200 trg on_slide'),
+    ("icon", 'icon "name" x:y [size] [color]', "Renders built-in vector glyph icons directly onto the canvas (shield, lock, unlock, gear, terminal, wifi, battery, cpu, check, cross, star, bell, user, folder, play).", 'icon "shield" 10:10 24 "#06b6d4"'),
+    ("notify_toast", 'notify_toast "Title" "Message" [level]', "Presents a floating modern toast notification card with an accent strip and auto-dismiss timer.", 'notify_toast "System Notice" "v1.6 Kernel Active" "info"'),
+    ("ui_theme", 'ui_theme "theme_name"', "Switches the active GUI theme (dark, cyber, glass, light, nord) setting default canvas background and palette colors.", 'ui_theme "cyber"'),
+    ("ui_ease", 'ui_ease var_name start end t [style]', "Calculates animation easing interpolation across styles (linear, ease_in, ease_out, ease_in_out, bounce). Can also be evaluated inline via ui_ease(start:end:t:style).", 'ui_ease smooth_x 0 100 0.5 "ease_out"'),
     ("os_boot", 'os_boot "OSName" "Version"', "Initializes and boots the TrappyOS kernel, process table, VFS, and security subsystem.", 'os_boot "TrappyOS" "1.5.0"'),
     ("os_screen_mode", 'os_screen_mode "phone"|"computer" "portrait"|"landscape"', "Configures the OS target device frame, aspect ratio, and resolution (smartphone vs desktop workstation).", 'os_screen_mode "phone" "portrait"'),
     ("os_vfs_write", 'os_vfs_write "/path" "data"', "Writes data securely to the OS Virtual File System with path traversal guards.", 'os_vfs_write "/etc/hostname" "trappy-node"'),

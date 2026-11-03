@@ -1,6 +1,6 @@
 ================================================================================
                     TRAPPY PROGRAMMING LANGUAGE
-                    OFFICIAL REFERENCE MANUAL (v1.15.0 RELEASE)
+                    OFFICIAL REFERENCE MANUAL (v1.6.0 RELEASE)
 ================================================================================
 Copyright (c) Trappy Language Project. All rights reserved.
 Official File Extension: .trappy
@@ -38,6 +38,8 @@ TABLE OF CONTENTS:
 21. SELF-HOSTING BOOTSTRAPPING & THE ROAD TO V2
 22. FULL STRING PROCESSING & REFLECTION SUITE
 23. MODERN CONTROL FLOW & ERROR HANDLING
+24. OS DEVELOPMENT & ZERO-TRUST SECURITY ARCHITECTURE
+25. MODERN UI/GUI SUITE (CARDS, BUTTONS, TOGGLES, PROGRESS, BADGES, ICONS)
 
 ================================================================================
 1. WHAT IS TRAPPY?
@@ -310,6 +312,8 @@ Trappy v1.0 features native perspective 3D rendering:
 21. SELF-HOSTING BOOTSTRAPPING & THE ROAD TO V2
 22. FULL STRING PROCESSING & REFLECTION SUITE
 23. MODERN CONTROL FLOW & ERROR HANDLING
+24. OS DEVELOPMENT & ZERO-TRUST SECURITY ARCHITECTURE
+25. MODERN UI/GUI SUITE (CARDS, BUTTONS, TOGGLES, PROGRESS, BADGES, ICONS)
 ================================================================================
 
 PROGRAM 1: DISCORD NOTIFICATION & OFFLINE STORAGE
@@ -382,6 +386,8 @@ Type reflection:
 
 ================================================================================
 23. MODERN CONTROL FLOW & ERROR HANDLING
+24. OS DEVELOPMENT & ZERO-TRUST SECURITY ARCHITECTURE
+25. MODERN UI/GUI SUITE (CARDS, BUTTONS, TOGGLES, PROGRESS, BADGES, ICONS)
 ================================================================================
 - while <cond> ... tren         (while loops)
 - break                         (break innermost loop)
@@ -391,3 +397,33 @@ Type reflection:
 - return <expr>                 (return statement)
 - lcontains / linsert / lslice  (list utilities)
 - dhas / ddel                   (dictionary utilities)
+
+
+================================================================================
+24. OS DEVELOPMENT & ZERO-TRUST SECURITY ARCHITECTURE
+================================================================================
+Trappy includes an operating system microkernel and security framework for 
+building, sandboxing, and defending operating systems:
+
+- Protection Rings: Strict enforcement across Rings 0..3 with ring underflow 
+  protection (negative rings blocked, privilege elevation blocked from userland).
+- Anti-Jailbreak Defenses: SHA-256 integrity sealing of critical files and 
+  automated tampering scans.
+- Anti-Exploit Defenses: Emulated memory boundary canaries and execution filters.
+- Sandbox Isolation: Launched apps execute in strictly isolated Environments 
+  without leaking parent kernel variables.
+
+================================================================================
+25. MODERN UI/GUI SUITE
+================================================================================
+Trappy v1.6 introduces modern, fluid graphical interface components:
+- card: Rounded container cards with customizable outlines and drop shadows.
+- btn_modern: Modern flat buttons with hover styling and callback triggers.
+- toggle: Interactive smooth pill switches with circular knobs.
+- progress: Rounded progress bars with active percentage fill and readouts.
+- badge: Status pill badges with colored indicator dots.
+- slider: Interactive value sliders with draggable thumb knobs.
+- icon: 15 canvas vector glyph icons without external images.
+- notify_toast: Floating notification cards with accent strips and auto-dismiss.
+- ui_theme: Palette switching (dark, cyber, glass, light, nord).
+- ui_ease: Precision animation easing (linear, ease_in, ease_out, ease_in_out, bounce).

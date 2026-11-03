@@ -2,7 +2,7 @@
 
 Trappy is an independent, universal programming language built from scratch. Its guiding design law is simple: **simple needs to be simple**. Beginners can create working games, apps, and network clients immediately, while advanced creators can connect almost anything across the web and local systems without pages of configuration or third-party dependencies.
 
-Current version: **v1.5.0 (OS Development Engine & Advanced Defenses Release)**
+Current version: **v1.6.0 (Modern UI/GUI & Hardened Zero-Trust OS Release)**
 
 ---
 
@@ -53,6 +53,34 @@ Trappy v1.5 turns Trappy into a complete Operating System development platform, 
 * **Custom Anti-Exploit Defenses:** Hardware-emulated memory buffer canary guards (`os_exploit_guard "canary" 1`), NX data buffer protection, and automated interception of out-of-bounds writes and unauthorized shell executions (`sys_exec`).
 * **Custom Defenses & Permissions:** Granular permission system (`os_perm_grant`, `os_perm_revoke`, `os_perm_check`) for `NETWORK`, `STORAGE`, `UI`, and `AUDIO`, coupled with per-app network firewall policies (`os_firewall_rule`) and threat blocklists (`os_block_list`).
 * **UI Compositor & Shell:** Desktop/mobile window containers (`os_ui_window`), taskbar / dock (`os_ui_taskbar`), push notification banners (`os_ui_notify`), and unified display rendering (`os_ui_render`).
+
+---
+
+## Modern UI/GUI Suite in v1.6.0
+
+Trappy v1.6 delivers a sleek, modern, and beautiful user interface component suite built natively into the engine for crafting polished operating system shells, dashboards, apps, and tools:
+
+* **Cards with Smooth Corners & Drop Shadows (`card`):** Render elegant container cards with configurable corner radii, theme accents, and soft drop shadows: `card 50:50 350:250 16 "#18181b" "#27272a"`.
+* **Modern Buttons (`btn_modern`):** Render flat, rounded buttons with hover and active states, accent backgrounds, and custom click handlers: `btn_modern "Launch OS" 100:100 140:40 trg on_click "#06b6d4"`.
+* **Interactive Toggle Switches (`toggle`):** Native pill switch track with circular indicator knob and state binding: `toggle wifi_enabled 200:150 trg on_toggle`.
+* **Progress Bars (`progress`):** Rounded progress track with smooth percentage fill and centered readout: `progress 75 100 50:300 200:20 "#10b981" "#27272a"`.
+* **Status Badges (`badge`):** Polished status pills with color-coded indicator dots and typography (secure, warning, danger, info, neutral): `badge "SECURE" 30:30 "secure"`.
+* **Interactive Sliders (`slider`):** Numerical slider with track, active progress fill, and draggable thumb knob: `slider brightness 0 100 50:350 200 trg on_slide`.
+* **Vector Glyph Icons (`icon`):** 15 built-in canvas vector icons rendered without external image files (`shield`, `lock`, `unlock`, `gear`, `terminal`, `wifi`, `battery`, `cpu`, `check`, `cross`, `star`, `bell`, `user`, `folder`, `play`): `icon "shield" 10:10 24 "#06b6d4"`.
+* **Floating Toast Notifications (`notify_toast`):** Non-blocking floating notification cards with accent strips and auto-dismissal timers: `notify_toast "System Notice" "v1.6 Active" "info"`.
+* **Theme Switching (`ui_theme`):** Switch entire UI palettes instantly between `dark`, `cyber`, `glass`, `light`, and `nord`: `ui_theme "cyber"`.
+* **Fluid Easing Interpolation (`ui_ease`):** High-precision animation easing across `linear`, `ease_in`, `ease_out`, `ease_in_out`, and `bounce`: statement `ui_ease pos 0 100 0.5 "ease_out"` or expression `mh ui_ease(0:100:0.5:"bounce") eq pos`.
+
+---
+
+## OS Security Hardening & Zero-Vulnerability Architecture
+
+Trappy v1.6 resolves low-level exploit primitives and hardens the operating system microkernel:
+
+* **Strict Protection Ring Boundaries:** Negative ring underflow (`os_ring_set -1`) and unauthorized ring elevation are blocked at the kernel boundary. Only rings 0..3 are permitted, and unprivileged userland code (Ring 3) cannot elevate to higher privilege rings.
+* **Defense Policy Protection:** Unprivileged processes cannot disarm or tamper with defense policies (`os_jailbreak_defend`), exploit guards (`os_exploit_guard`), integrity seals (`os_integrity_seal`), defense hooks, or security blocklists.
+* **VFS Userland Confinement:** Ring > 0 write and delete operations are strictly isolated to `/apps/`, `/storage/`, and `/tmp/`. Writes to `/sys`, `/bin`, `/etc`, or `/var` are immediately blocked, logged in the kernel security event log, and raise security errors.
+* **Isolated Sandbox Scoping:** Sandboxed applications launched via `os_app_launch` execute within an independent, isolated environment scope (`Environment(parent=None)`), preventing parent scope leakage and safeguarding OS kernel memory.
 
 ---
 
