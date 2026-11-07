@@ -2,7 +2,7 @@
 
 Trappy is an independent, universal programming language built from scratch. Its guiding design law is simple: **simple needs to be simple**. Beginners can create working games, apps, and network clients immediately, while advanced creators can connect almost anything across the web and local systems without pages of configuration or third-party dependencies.
 
-Current version: **v1.6.0 (Modern UI/GUI & Hardened Zero-Trust OS Release)**
+Current version: **v1.7.0 (Micro-AI Development Engine & Universal Command Manual Release)**
 
 ---
 
@@ -81,6 +81,21 @@ Trappy v1.6 resolves low-level exploit primitives and hardens the operating syst
 * **Defense Policy Protection:** Unprivileged processes cannot disarm or tamper with defense policies (`os_jailbreak_defend`), exploit guards (`os_exploit_guard`), integrity seals (`os_integrity_seal`), defense hooks, or security blocklists.
 * **VFS Userland Confinement:** Ring > 0 write and delete operations are strictly isolated to `/apps/`, `/storage/`, and `/tmp/`. Writes to `/sys`, `/bin`, `/etc`, or `/var` are immediately blocked, logged in the kernel security event log, and raise security errors.
 * **Isolated Sandbox Scoping:** Sandboxed applications launched via `os_app_launch` execute within an independent, isolated environment scope (`Environment(parent=None)`), preventing parent scope leakage and safeguarding OS kernel memory.
+
+---
+
+## Micro-AI Development Engine in v1.7.0
+
+Trappy v1.7 introduces a lightweight, zero-dependency Micro-AI development ecosystem, enabling developers to build, train, deploy, and visualize artificial intelligence directly in Trappy:
+
+* **Neural Networks (`ai_net_new`, `ai_net_train`, `ai_net_predict`, `ai_net_classify`, `ai_net_save`, `ai_net_load`):** Build multi-layer feedforward neural networks with Xavier weight initialization, backpropagation gradient descent, non-linear activations (`sigmoid`, `relu`, `tanh`), binary / multi-class classification, and JSON model persistence.
+* **Q-Learning RL Agents (`ai_agent_new`, `ai_agent_act`, `ai_agent_reward`, `ai_agent_save`, `ai_agent_load`):** Implement reinforcement learning agents using tabular Bellman equation updates, configurable epsilon-greedy exploration, and policy serialization.
+* **NLP & Vector Embeddings (`ai_tokenize`, `ai_embed`, `ai_sim`):** Tokenize sentences into normalized word tokens, generate dense feature-hashed or bag-of-words embedding vectors, and compute cosine similarity scores between vectors.
+* **Probabilistic Markov N-Gram Generation (`ai_ngram_train`, `ai_ngram_gen`):** Train text generation models on source text corpora and generate synthetic natural language text from seed prompts.
+* **AI UI Visualization Suite (`ai_ui_net`, `ai_ui_agent`, `ai_ui_chat`):** Visualize neural network topologies and synapse weights, inspect RL agent state policies, and render conversational chat bubble widgets directly on the canvas.
+* **Operating System AI Telemetry (`os_ai_anomaly_check`, `os_ai_assistant`):** Employs kernel-level AI anomaly detection to spot CPU/RAM/syscall anomalies and an intelligent conversational OS assistant for system diagnosis.
+* **Encyclopedic TrappyIDE Manual (`F1`):** Complete reference browser covering all 256 keywords and commands across core language, GUI, 3D, networking, audio, AI, and OS with search and 1-click code insertion.
+* **Native List & Array Literals (`[...]`):** Express nested lists, matrices, layers, and coordinate tables with clean brackets notation (`[2, 4, 1]`, `[[0, 0], [1, 1]]`).
 
 ---
 
@@ -285,3 +300,27 @@ For the complete command reference guide, see [MANUAL.md](MANUAL.md).
 ## License
 
 Trappy is an open source programming language project.
+
+### 4. Micro-AI Neural Network Training & Classification
+
+```trappy
+trst
+# Create a 2-layer neural network with 2 inputs, 4 hidden neurons, and 1 output
+ai_net_new "xor_classifier" [2, 4, 1] "sigmoid"
+
+# Train XOR truth table using backpropagation
+ai_net_train "xor_classifier" [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]] [[0.0], [1.0], [1.0], [0.0]] 1500 1.0 tit loss
+out "Final Training Loss: " + to_str(loss)
+
+# Predict inference on test input [1.0, 0.0]
+ai_net_predict "xor_classifier" [1.0, 0.0] tit prediction
+out "XOR Prediction for [1, 0]: " + to_str(prediction)
+
+# Classify with binary decision threshold (0.5)
+ai_net_classify "xor_classifier" [1.0, 0.0] 0.5 tit class_result
+out "Binary Class: " + to_str(class_result)
+
+# Save trained weights for production deployment
+ai_net_save "xor_classifier" "models/xor_model.json"
+tren
+```

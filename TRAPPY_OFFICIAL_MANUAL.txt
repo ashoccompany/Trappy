@@ -1,6 +1,6 @@
 ================================================================================
                     TRAPPY PROGRAMMING LANGUAGE
-                    OFFICIAL REFERENCE MANUAL (v1.6.0 RELEASE)
+                    OFFICIAL REFERENCE MANUAL (v1.7.0 RELEASE)
 ================================================================================
 Copyright (c) Trappy Language Project. All rights reserved.
 Official File Extension: .trappy
@@ -427,3 +427,31 @@ Trappy v1.6 introduces modern, fluid graphical interface components:
 - notify_toast: Floating notification cards with accent strips and auto-dismiss.
 - ui_theme: Palette switching (dark, cyber, glass, light, nord).
 - ui_ease: Precision animation easing (linear, ease_in, ease_out, ease_in_out, bounce).
+
+
+================================================================================
+26. MICRO-AI DEVELOPMENT ENGINE
+================================================================================
+Trappy v1.7 introduces a complete Micro-AI development ecosystem built directly
+into the language runtime with zero external dependencies:
+
+- ai_net_new: Instantiates feedforward neural network with Xavier init and activations (sigmoid, relu, tanh).
+- ai_net_train: Trains network via backpropagation and gradient descent, returning MSE loss.
+- ai_net_predict: Forward pass inference prediction on input feature vector.
+- ai_net_classify: Categorizes inputs using argmax class index or binary threshold.
+- ai_net_save / ai_net_load: Serializes and restores neural net models to/from JSON.
+- ai_agent_new: Instantiates tabular Q-learning RL agent (learning rate, discount factor, epsilon).
+- ai_agent_act: Queries RL agent for action selection using epsilon-greedy policy.
+- ai_agent_reward: Updates Bellman equation Q-values from environment rewards and state transitions.
+- ai_agent_save / ai_agent_load: Saves and restores RL agent Q-tables to/from JSON.
+- ai_tokenize: Normalizes and splits input text into lowercase alphanumeric tokens.
+- ai_embed: Encodes token lists into dense vectors via feature hashing or vocabulary bags-of-words.
+- ai_sim: Computes cosine similarity between two embedding vectors.
+- ai_ngram_train: Learns probabilistic Markov transitions from a source text corpus.
+- ai_ngram_gen: Generates synthetic sentences from Markov models from seed prompts.
+- ai_ui_net: Draws interactive topology diagrams of neural net layers and synaptic weights.
+- ai_ui_agent: Renders active RL agent policies, Q-values, and state statistics.
+- ai_ui_chat: Draws modern conversational chat cards with avatar icons and message bubbles.
+- os_ai_anomaly_check: Kernel AI telemetry scanner detecting CPU, memory, and syscall anomalies.
+- os_ai_assistant: Interactive conversational assistant for kernel diagnosis and remediation.
+- [...]: Native bracket syntax for multi-dimensional lists, matrices, layers, and coordinate arrays.

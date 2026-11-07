@@ -1,4 +1,5 @@
 import sys
+import re
 import os
 import time
 import math
@@ -23,7 +24,7 @@ try:
 except ImportError:
     winsound = None
 
-__version__ = "1.6.0"
+__version__ = "1.7.0"
 
 class VirtualLoopbackSocket:
     _channels = {}
@@ -80,7 +81,10 @@ class BreakSignal(Exception):
 class ContinueSignal(Exception):
     pass
 
-def sanitize_path(filename, base_dir=None):
+def sanitize_path(filename, base_dir=None, line=None):
+    if isinstance(base_dir, int):
+        line = base_dir
+        base_dir = None
     if base_dir is None:
         base_dir = os.getcwd()
     base_dir = os.path.abspath(base_dir)
@@ -101,12 +105,254 @@ def validate_url(url, line=None):
         )
     return clean_url
 
+
+# ==============================================================================
+# TRAPPY MICRO-AI ENGINE (v1.7.0)
+# Lightweight, high-performance neural networks, Q-learning RL, and NLP models.
+# ==============================================================================
+
+class MicroNeuralNet:
+    def __init__(self, layers, activation="sigmoid"):
+        self.layers = [int(l) for l in layers]
+        self.activation = str(activation).lower().strip()
+        self.weights = []
+        self.biases = []
+        for i in range(len(self.layers) - 1):
+            fan_in = self.layers[i]
+            fan_out = self.layers[i+1]
+            scale = math.sqrt(2.0 / (fan_in + fan_out))
+            w = [[random.uniform(-1.0, 1.0) * scale for _ in range(fan_out)] for _ in range(fan_in)]
+            b = [random.uniform(-0.1, 0.1) for _ in range(fan_out)]
+            self.weights.append(w)
+            self.biases.append(b)
+
+    def _activate(self, x):
+        if self.activation == "relu":
+            return max(0.0, x)
+        elif self.activation == "tanh":
+            return math.tanh(x)
+        else: # sigmoid
+            x = max(-60.0, min(60.0, x))
+            return 1.0 / (1.0 + math.exp(-x))
+
+    def _activate_deriv(self, y):
+        if self.activation == "relu":
+            return 1.0 if y > 0 else 0.0
+        elif self.activation == "tanh":
+            return 1.0 - y * y
+        else:
+            return y * (1.0 - y)
+
+    def forward(self, x):
+        curr = [float(v) for v in x]
+        activations = [curr]
+        for w, b in zip(self.weights, self.biases):
+            next_layer = []
+            for j in range(len(b)):
+                dot = sum(curr[i] * w[i][j] for i in range(len(curr))) + b[j]
+                next_layer.append(self._activate(dot))
+            curr = next_layer
+            activations.append(curr)
+        return curr, activations
+
+    def train_epoch(self, inputs, targets, lr=0.5):
+        total_loss = 0.0
+        for x, y_true in zip(inputs, targets):
+            if not isinstance(y_true, list):
+                y_true = [float(y_true)]
+            y_pred, activations = self.forward(x)
+            
+            loss = sum((p - t) ** 2 for p, t in zip(y_pred, y_true))
+            total_loss += loss
+            
+            deltas = []
+            for j in range(len(y_pred)):
+                diff = y_pred[j] - y_true[j]
+                d = diff * self._activate_deriv(y_pred[j])
+                deltas.append(d)
+                
+            layer_deltas = [deltas]
+            for l in range(len(self.weights) - 1, 0, -1):
+                prev_deltas = layer_deltas[0]
+                w = self.weights[l]
+                current_acts = activations[l]
+                curr_deltas = []
+                for i in range(len(current_acts)):
+                    err = sum(prev_deltas[j] * w[i][j] for j in range(len(prev_deltas)))
+                    d = err * self._activate_deriv(current_acts[i])
+                    curr_deltas.append(d)
+                layer_deltas.insert(0, curr_deltas)
+                
+            for l in range(len(self.weights)):
+                a = activations[l]
+                d = layer_deltas[l]
+                for i in range(len(a)):
+                    for j in range(len(d)):
+                        self.weights[l][i][j] -= lr * d[j] * a[i]
+                for j in range(len(d)):
+                    self.biases[l][j] -= lr * d[j]
+                    
+        return total_loss / max(1, len(inputs))
+
+    def train(self, inputs, targets, epochs=1000, lr=1.0):
+        epochs = max(1, int(epochs))
+        last_loss = 0.0
+        for _ in range(epochs):
+            last_loss = self.train_epoch(inputs, targets, lr)
+            if last_loss < 0.005:
+                break
+        return last_loss
+
+    def predict(self, x):
+        y_pred, _ = self.forward(x)
+        return y_pred
+
+    def classify(self, x, threshold=0.5):
+        y_pred = self.predict(x)
+        if len(y_pred) == 1:
+            return 1 if y_pred[0] >= threshold else 0
+        return y_pred.index(max(y_pred))
+
+    def to_dict(self):
+        return {
+            "type": "neural_net",
+            "layers": self.layers,
+            "activation": self.activation,
+            "weights": self.weights,
+            "biases": self.biases
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        net = cls(data["layers"], data.get("activation", "sigmoid"))
+        net.weights = data["weights"]
+        net.biases = data["biases"]
+        return net
+
+class MicroRLAgent:
+    def __init__(self, actions, lr=0.2, gamma=0.9, epsilon=0.1):
+        self.actions = actions if isinstance(actions, list) else list(range(int(actions)))
+        self.lr = float(lr)
+        self.gamma = float(gamma)
+        self.epsilon = float(epsilon)
+        self.q_table = {}
+
+    def _get_q_row(self, state):
+        key = str(state)
+        if key not in self.q_table:
+            self.q_table[key] = [0.0] * len(self.actions)
+        return self.q_table[key]
+
+    def act(self, state, explore=True):
+        q_row = self._get_q_row(state)
+        if explore and random.random() < self.epsilon:
+            return random.choice(self.actions)
+        best_idx = 0
+        best_val = q_row[0]
+        for idx, val in enumerate(q_row):
+            if val > best_val:
+                best_val = val
+                best_idx = idx
+        return self.actions[best_idx]
+
+    def reward(self, state, action, reward_val, next_state):
+        action_idx = self.actions.index(action) if action in self.actions else int(action)
+        q_row = self._get_q_row(state)
+        next_q_row = self._get_q_row(next_state)
+        max_next_q = max(next_q_row)
+        target = float(reward_val) + self.gamma * max_next_q
+        q_row[action_idx] += self.lr * (target - q_row[action_idx])
+        return q_row[action_idx]
+
+    def to_dict(self):
+        return {
+            "type": "rl_agent",
+            "actions": self.actions,
+            "lr": self.lr,
+            "gamma": self.gamma,
+            "epsilon": self.epsilon,
+            "q_table": self.q_table
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        agent = cls(data["actions"], data.get("lr", 0.2), data.get("gamma", 0.9), data.get("epsilon", 0.1))
+        agent.q_table = data.get("q_table", {})
+        return agent
+
+class MicroNGram:
+    def __init__(self, n=2):
+        self.n = max(1, int(n))
+        self.model = {}
+
+    def train(self, text):
+        words = re.findall(r"\b\w+\b", str(text).lower())
+        if len(words) <= self.n:
+            return
+        for i in range(len(words) - self.n):
+            prefix = tuple(words[i:i + self.n])
+            nxt = words[i + self.n]
+            if prefix not in self.model:
+                self.model[prefix] = []
+            self.model[prefix].append(nxt)
+
+    def generate(self, seed, max_words=10):
+        words = re.findall(r"\b\w+\b", str(seed).lower())
+        if not words:
+            return ""
+        if len(words) < self.n:
+            candidates = [k for k in self.model if k[0] == words[-1]]
+            if candidates:
+                prefix = random.choice(candidates)
+                output = list(prefix)
+            else:
+                return str(seed)
+        else:
+            prefix = tuple(words[-self.n:])
+            output = list(words)
+            
+        for _ in range(max_words):
+            if prefix in self.model and self.model[prefix]:
+                nxt = random.choice(self.model[prefix])
+                output.append(nxt)
+                prefix = tuple(output[-self.n:])
+            else:
+                break
+        return " ".join(output)
+
+def vector_cosine_sim(v1, v2):
+    dot = sum(float(a) * float(b) for a, b in zip(v1, v2))
+    mag1 = math.sqrt(sum(float(a) * float(a) for a in v1))
+    mag2 = math.sqrt(sum(float(b) * float(b) for b in v2))
+    if mag1 == 0 or mag2 == 0:
+        return 0.0
+    return round(dot / (mag1 * mag2), 4)
+
+def ai_tokenize_text(text):
+    return re.findall(r"\b\w+\b", str(text).lower())
+
+def ai_embed_tokens(tokens, vocab):
+    tok_set = tokens if isinstance(tokens, list) else ai_tokenize_text(tokens)
+    if isinstance(vocab, (int, float)):
+        dim = max(1, int(vocab))
+        vec = [0.0] * dim
+        for t in tok_set:
+            h = 0
+            for ch in str(t):
+                h = (h * 31 + ord(ch)) & 0xFFFFFF
+            vec[h % dim] += 1.0
+        return vec
+    counts = {}
+    for t in tok_set:
+        counts[t] = counts.get(t, 0) + 1
+    return [counts.get(w, 0) for w in vocab]
+
 class TrappyOSKernel:
     def __init__(self, interpreter=None):
         self.interpreter = interpreter
         self.is_booted = False
         self.os_name = "TrappyOS"
-        self.version = "1.6.0"
+        self.version = "1.7.0"
         self.boot_time = time.time()
         self.current_ring = 0
         self.active_pid = 1
@@ -137,9 +383,9 @@ class TrappyOSKernel:
             "/proc": {"type": "dir"},
             "/var": {"type": "dir"},
             "/var/log": {"type": "dir"},
-            "/etc/os-release": {"type": "file", "content": "NAME=TrappyOS\nVERSION=1.6.0\nID=trappy\n"},
+            "/etc/os-release": {"type": "file", "content": "NAME=TrappyOS\nVERSION=1.7.0\nID=trappy\n"},
             "/etc/hostname": {"type": "file", "content": "trappy-node"},
-            "/sys/kernel": {"type": "file", "content": "TrappyKernel v1.6 Core"},
+            "/sys/kernel": {"type": "file", "content": "TrappyKernel v1.7 Core"},
             "/sys/security.conf": {"type": "file", "content": "ENFORCE=1\nCANARY=1\nNX=1\n"}
         }
 
@@ -148,7 +394,7 @@ class TrappyOSKernel:
 
         self.settings = {
             "os.name": "TrappyOS",
-            "os.version": "1.6.0",
+            "os.version": "1.7.0",
             "display.mode": "computer",
             "display.orientation": "landscape",
             "display.theme": "dark",
@@ -186,7 +432,7 @@ class TrappyOSKernel:
         self._init_default_seals()
 
     def _init_default_seals(self):
-        k_content = self.vfs.get("/sys/kernel", {}).get("content", "TrappyKernel v1.6 Core")
+        k_content = self.vfs.get("/sys/kernel", {}).get("content", "TrappyKernel v1.7 Core")
         self.integrity_seals["/sys/kernel"] = (hashlib.sha256(k_content.encode("utf-8")).hexdigest(), "")
         sec_conf = self.vfs.get("/sys/security.conf", {}).get("content", "")
         self.integrity_seals["/sys/security.conf"] = (hashlib.sha256(sec_conf.encode("utf-8")).hexdigest(), "")
@@ -438,7 +684,7 @@ class TrappyOSKernel:
 
         safe_url = validate_url(str(url))
         try:
-            req = urllib.request.Request(safe_url, headers={"User-Agent": "TrappyOSAppStore/1.6"})
+            req = urllib.request.Request(safe_url, headers={"User-Agent": "TrappyOSAppStore/1.7"})
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = resp.read().decode("utf-8", errors="ignore")
             return self.app_install(clean_id, data)
@@ -547,7 +793,7 @@ class TrappyOSKernel:
             "device_type": self.screen_mode,
             "orientation": self.screen_orientation,
             "screen_resolution": f"{self.screen_width}x{self.screen_height}",
-            "cpu": "Trappy Silicon v1.6 Virtual SoC (8 Cores)",
+            "cpu": "Trappy Silicon v1.7 Virtual SoC (8 Cores)",
             "ram_total_mb": 4096,
             "ram_free_mb": 3120,
             "battery": dict(self.battery),
@@ -595,6 +841,59 @@ class TrappyOSKernel:
         print(f"[TrappyOS Notification] [{level.upper()}]: {title} - {msg}")
         return notif
 
+    def os_ai_anomaly_check(self, custom_metrics=None):
+        risk = 0
+        reasons = []
+        if custom_metrics:
+            if isinstance(custom_metrics, (list, tuple)) and len(custom_metrics) >= 2:
+                cpu, ram = custom_metrics[0], custom_metrics[1]
+                if cpu > 90.0:
+                    risk += 35
+                    reasons.append("Abnormal CPU load spike")
+                if ram > 90.0:
+                    risk += 35
+                    reasons.append("Abnormal RAM consumption spike")
+                if len(custom_metrics) >= 3 and custom_metrics[2] > 200:
+                    risk += 40
+                    reasons.append("Abnormal syscall frequency")
+        if len(self.processes) > 20:
+            risk += 25
+            reasons.append("High process density")
+        for ev in self.jailbreak_events:
+            risk += 35
+            reasons.append(f"Security event: {ev.get('type')}")
+        for ev in self.exploit_events:
+            risk += 40
+            reasons.append(f"Exploit attempt: {ev.get('type')}")
+        if self.current_ring > 0:
+            risk += 15
+            reasons.append("Non-kernel supervisor execution")
+        
+        status = "CRITICAL" if risk >= 70 else ("WARNING" if risk >= 30 else "OPTIMAL")
+        return {
+            "status": status,
+            "risk_score": min(100, risk),
+            "threats_count": len(reasons),
+            "threats": reasons,
+            "ai_engine": "TrappyMicroAI v1.7"
+        }
+
+    def os_ai_assistant(self, prompt):
+        q = str(prompt).lower().strip()
+        uptime = round(time.time() - self.boot_time, 1)
+        if "status" in q or "health" in q:
+            return f"System {self.os_name} v{self.version} is ONLINE. Uptime: {uptime}s. Ring: {self.current_ring}. Processes: {len(self.processes)}."
+        elif "process" in q or "procs" in q:
+            p_names = [p["name"] for p in self.processes.values()]
+            return f"Active processes ({len(self.processes)}): {', '.join(p_names)}."
+        elif "battery" in q or "power" in q:
+            return f"Battery Level: {self.battery['level']}%. Charging: {'Yes' if self.battery.get('charging') else 'No'}."
+        elif "security" in q or "defense" in q or "jailbreak" in q:
+            jb = self.jailbreak_check()
+            return f"Security rating: {jb['status']}. Active guards: 4. Violations: {jb['violations_count']}."
+        else:
+            return f"TrappyOS AI Core online. System nominal. Query processed for: '{prompt}'."
+
     def ui_render(self):
         gui = getattr(self.interpreter, "gui", None) if self.interpreter else None
         if not gui or not getattr(gui, "canvas", None):
@@ -604,38 +903,85 @@ class TrappyOSKernel:
         canvas.delete("all")
         w = self.screen_width
         h = self.screen_height
+        theme_name = getattr(self.interpreter, "current_theme", "dark")
+        theme = THEMES.get(theme_name, THEMES["dark"])
 
         if self.screen_mode == "phone":
-            canvas.create_rectangle(8, 8, w - 8, h - 8, fill="#121214", outline="#27272a", width=3)
-            canvas.create_rectangle(14, 40, w - 14, h - 30, fill="#0f172a", outline="")
-            canvas.create_rectangle(w / 2 - 45, 14, w / 2 + 45, 32, fill="#000000", outline="#18181b")
-            canvas.create_oval(w / 2 + 25, 20, w / 2 + 33, 28, fill="#1e293b", outline="")
-            canvas.create_text(35, 24, text=time.strftime("%H:%M"), fill="#ffffff", font=("Segoe UI", 9, "bold"))
-            canvas.create_text(w - 55, 24, text=f"5G  {self.battery['level']}%", fill="#ffffff", font=("Segoe UI", 9, "bold"))
-            canvas.create_rectangle(w / 2 - 35, h - 18, w / 2 + 35, h - 14, fill="#ffffff", outline="")
+            # Outer phone chassis with curved bezel
+            bezel_pts = get_rounded_rect_points(8, 8, w - 8, h - 8, 28)
+            canvas.create_polygon(bezel_pts, smooth=True, fill="#121214", outline="#27272a", width=3)
+            # Screen area
+            screen_pts = get_rounded_rect_points(14, 14, w - 14, h - 14, 22)
+            canvas.create_polygon(screen_pts, smooth=True, fill=theme["bg"], outline="")
+            # Dynamic Island / Notch
+            notch_pts = get_rounded_rect_points(w / 2 - 45, 18, w / 2 + 45, 36, 9)
+            canvas.create_polygon(notch_pts, smooth=True, fill="#000000", outline="#18181b")
+            canvas.create_oval(w / 2 + 25, 23, w / 2 + 33, 31, fill="#1e293b", outline="")
+            # Status bar text
+            canvas.create_text(35, 27, text=time.strftime("%H:%M"), fill="#ffffff", font=("Segoe UI", 9, "bold"))
+            canvas.create_text(w - 55, 27, text=f"5G  {self.battery['level']}%", fill="#ffffff", font=("Segoe UI", 9, "bold"))
+            # AI & System Badge in Phone Mode
+            phone_badge_pts = get_rounded_rect_points(25, 60, w - 25, 95, 10)
+            canvas.create_polygon(phone_badge_pts, smooth=True, fill=theme["card_bg"], outline=theme["card_border"], width=1)
+            canvas.create_oval(38, 73, 46, 81, fill="#10b981", outline="")
+            canvas.create_text(54, 77, text=f"{self.os_name} v{self.version} | Ring {self.current_ring} | AI READY", fill="#e2e8f0", font=("Segoe UI", 8, "bold"), anchor="w")
+            # Bottom home indicator
+            home_pts = get_rounded_rect_points(w / 2 - 40, h - 22, w / 2 + 40, h - 17, 3)
+            canvas.create_polygon(home_pts, smooth=True, fill="#ffffff", outline="")
         else:
-            canvas.create_rectangle(0, 0, w, h, fill="#0a0a0c", outline="")
-            canvas.create_text(w / 2, h / 2 - 20, text=f"{self.os_name} v{self.version}", fill="#1e293b", font=("Consolas", 28, "bold"))
-            tb_h = 38
+            # Desktop background
+            canvas.create_rectangle(0, 0, w, h, fill=theme["bg"], outline="")
+            # Wallpaper watermark
+            canvas.create_text(w / 2, h / 2 - 30, text=f"{self.os_name} v{self.version}", fill="#1e293b", font=("Consolas", 32, "bold"))
+            canvas.create_text(w / 2, h / 2 + 10, text="Zero-Trust Architecture | Micro-AI Subsystem", fill="#334155", font=("Segoe UI", 12))
+            
+            # Desktop modern taskbar
+            tb_h = 42
             tb_y = h - tb_h if self.taskbar.get("pos") == "bottom" else 0
-            canvas.create_rectangle(0, tb_y, w, tb_y + tb_h, fill=self.taskbar.get("color", "#18181b"), outline="#27272a")
-            canvas.create_rectangle(6, tb_y + 5, 65, tb_y + tb_h - 5, fill="#06b6d4", outline="")
-            canvas.create_text(35, tb_y + tb_h / 2, text="START", fill="#000000", font=("Segoe UI", 8, "bold"))
-            canvas.create_text(w - 45, tb_y + tb_h / 2, text=time.strftime("%H:%M"), fill="#e4e4e7", font=("Segoe UI", 9))
+            tb_pts = get_rounded_rect_points(0, tb_y, w, tb_y + tb_h, 0)
+            canvas.create_polygon(tb_pts, smooth=True, fill=self.taskbar.get("color", theme["card_bg"]), outline="#27272a")
+            # Start button pill
+            start_pts = get_rounded_rect_points(8, tb_y + 6, 80, tb_y + tb_h - 6, 8)
+            canvas.create_polygon(start_pts, smooth=True, fill=theme["accent"], outline="")
+            canvas.create_text(44, tb_y + tb_h / 2, text="START", fill=theme.get("accent_text", "#000000"), font=("Segoe UI", 9, "bold"))
+            # AI Core Pill in Taskbar
+            ai_pill_pts = get_rounded_rect_points(92, tb_y + 8, 220, tb_y + tb_h - 8, 8)
+            canvas.create_polygon(ai_pill_pts, smooth=True, fill="#0d1527", outline="#00ffcc", width=1)
+            canvas.create_oval(102, tb_y + 17, 108, tb_y + 23, fill="#00ffcc", outline="")
+            canvas.create_text(116, tb_y + tb_h / 2, text="AI CORE: ONLINE", fill="#00ffcc", font=("Segoe UI", 8, "bold"), anchor="w")
+            # Clock & System Tray
+            canvas.create_text(w - 60, tb_y + tb_h / 2, text=time.strftime("%H:%M"), fill="#e4e4e7", font=("Segoe UI", 10, "bold"))
+            canvas.create_text(w - 130, tb_y + tb_h / 2, text=f"BAT {self.battery['level']}%", fill="#a1a1aa", font=("Segoe UI", 8))
 
+        # Windows with modern rounded cards, shadows, and Mac-style traffic lights
         for win in self.windows:
             if win.get("visible"):
                 wx, wy, ww, wh = win["x"], win["y"], win["w"], win["h"]
-                canvas.create_rectangle(wx, wy, wx + ww, wy + wh, fill="#18181b", outline="#3f3f46", width=2)
-                canvas.create_rectangle(wx, wy, wx + ww, wy + 24, fill="#27272a", outline="")
-                canvas.create_text(wx + 10, wy + 12, text=win["title"], fill="#f4f4f5", font=("Segoe UI", 9, "bold"), anchor="w")
-                canvas.create_text(wx + ww - 15, wy + 12, text="X", fill="#ef4444", font=("Segoe UI", 9, "bold"))
+                # Window shadow
+                win_shadow = get_rounded_rect_points(wx + 4, wy + 4, wx + ww + 4, wy + wh + 4, 10)
+                canvas.create_polygon(win_shadow, smooth=True, fill="#050508", outline="")
+                # Window body
+                win_pts = get_rounded_rect_points(wx, wy, wx + ww, wy + wh, 10)
+                canvas.create_polygon(win_pts, smooth=True, fill=theme["card_bg"], outline=theme["card_border"], width=1)
+                # Titlebar
+                tb_pts = get_rounded_rect_points(wx, wy, wx + ww, wy + 28, 10)
+                canvas.create_polygon(tb_pts, smooth=True, fill="#27272a", outline="")
+                # Window buttons (Close red, Min amber, Max green)
+                canvas.create_oval(wx + 12, wy + 9, wx + 22, wy + 19, fill="#ef4444", outline="")
+                canvas.create_oval(wx + 28, wy + 9, wx + 38, wy + 19, fill="#f59e0b", outline="")
+                canvas.create_oval(wx + 44, wy + 9, wx + 54, wy + 19, fill="#10b981", outline="")
+                # Window title
+                canvas.create_text(wx + 64, wy + 14, text=win["title"], fill="#f4f4f5", font=("Segoe UI", 9, "bold"), anchor="w")
 
+        # Notifications
         if self.notifications:
             latest = self.notifications[-1]
-            canvas.create_rectangle(w - 260, 20, w - 20, 75, fill="#1e293b", outline="#06b6d4", width=2)
-            canvas.create_text(w - 245, 35, text=latest["title"], fill="#38bdf8", font=("Segoe UI", 9, "bold"), anchor="w")
-            canvas.create_text(w - 245, 55, text=latest["msg"][:30], fill="#e2e8f0", font=("Segoe UI", 8), anchor="w")
+            t_pts = get_rounded_rect_points(w - 280, 20, w - 20, 80, 10)
+            canvas.create_polygon(t_pts, smooth=True, fill=theme["card_bg"], outline=theme["accent"], width=2)
+            strip_pts = get_rounded_rect_points(w - 280, 20, w - 274, 80, 4)
+            canvas.create_polygon(strip_pts, smooth=True, fill=theme["accent"], outline="")
+            canvas.create_text(w - 260, 38, text=latest["title"], fill=theme["accent"], font=("Segoe UI", 9, "bold"), anchor="w")
+            canvas.create_text(w - 260, 58, text=latest["msg"][:30], fill="#e2e8f0", font=("Segoe UI", 8), anchor="w")
 
         return {"status": "ok", "mode": self.screen_mode, "rendered": True}
 
@@ -904,7 +1250,12 @@ def tokenize(code):
         "os_exploit_guard", "os_exploit_status", "os_ring_set", "os_ring_get",
         "os_perm_grant", "os_perm_revoke", "os_perm_check",
         "os_firewall_rule", "os_defense_hook", "os_block_list",
-        "card", "btn_modern", "toggle", "progress", "badge", "slider", "icon", "notify_toast", "ui_theme", "ui_ease"
+        "card", "btn_modern", "toggle", "progress", "badge", "slider", "icon", "notify_toast", "ui_theme", "ui_ease",
+        "fai", "ai_net_new", "ai_net_train", "ai_net_predict", "ai_net_classify", "ai_net_save", "ai_net_load",
+        "ai_agent_new", "ai_agent_act", "ai_agent_reward", "ai_agent_save", "ai_agent_load",
+        "ai_tokenize", "ai_embed", "ai_sim", "ai_ngram_train", "ai_ngram_gen",
+        "ai_ui_net", "ai_ui_agent", "ai_ui_chat",
+        "os_ai_anomaly_check", "os_ai_assistant"
     }
 
     while i < n:
@@ -961,7 +1312,7 @@ def tokenize(code):
             i += 2
             continue
 
-        if c in "():+=|,><*/%":
+        if c in "():+=|,><*/%[]":
             tokens.append(Token(c, c, line))
             i += 1
             continue
@@ -1188,7 +1539,29 @@ class Parser:
             "ICON": self._parse_icon,
             "NOTIFY_TOAST": self._parse_notify_toast,
             "UI_THEME": self._parse_ui_theme,
-            "UI_EASE": self._parse_ui_ease
+            "UI_EASE": self._parse_ui_ease,
+            "FAI": self._parse_fai,
+            "AI_NET_NEW": self._parse_ai_net_new,
+            "AI_NET_TRAIN": self._parse_ai_net_train,
+            "AI_NET_PREDICT": self._parse_ai_net_predict,
+            "AI_NET_CLASSIFY": self._parse_ai_net_classify,
+            "AI_NET_SAVE": self._parse_ai_net_save,
+            "AI_NET_LOAD": self._parse_ai_net_load,
+            "AI_AGENT_NEW": self._parse_ai_agent_new,
+            "AI_AGENT_ACT": self._parse_ai_agent_act,
+            "AI_AGENT_REWARD": self._parse_ai_agent_reward,
+            "AI_AGENT_SAVE": self._parse_ai_agent_save,
+            "AI_AGENT_LOAD": self._parse_ai_agent_load,
+            "AI_TOKENIZE": self._parse_ai_tokenize,
+            "AI_EMBED": self._parse_ai_embed,
+            "AI_SIM": self._parse_ai_sim,
+            "AI_NGRAM_TRAIN": self._parse_ai_ngram_train,
+            "AI_NGRAM_GEN": self._parse_ai_ngram_gen,
+            "AI_UI_NET": self._parse_ai_ui_net,
+            "AI_UI_AGENT": self._parse_ai_ui_agent,
+            "AI_UI_CHAT": self._parse_ai_ui_chat,
+            "OS_AI_ANOMALY_CHECK": self._parse_os_ai_anomaly_check,
+            "OS_AI_ASSISTANT": self._parse_os_ai_assistant
         }
 
     def peek(self):
@@ -2564,6 +2937,221 @@ class Parser:
             style = self.consume(self.peek().kind).val
         return ("UI_EASE", target_var, start_expr, end_expr, t_expr, style, tok.line)
 
+    def _parse_fai(self, tok):
+        self.consume("FAI")
+        nxt = self.peek()
+        cand = f"AI_{nxt.val.upper()}" if nxt.kind in ("NAME",) else nxt.kind
+        if cand in self.statement_parsers:
+            self.consume(nxt.kind)
+            fake_tok = Token(cand, nxt.val, nxt.line)
+            return self.statement_parsers[cand](fake_tok)
+        return self.parse_statement()
+
+    def _parse_ai_net_new(self, tok):
+        self.consume("AI_NET_NEW")
+        name_expr = self.parse_atom()
+        layers_expr = self.parse_atom()
+        act_expr = ("STR", "sigmoid")
+        if self.peek().kind in ("NAME", "STR"):
+            act_expr = self.parse_atom()
+        return ("AI_NET_NEW", name_expr, layers_expr, act_expr, tok.line)
+
+    def _parse_ai_net_train(self, tok):
+        self.consume("AI_NET_TRAIN")
+        name_expr = self.parse_atom()
+        in_expr = self.parse_atom()
+        target_expr = self.parse_atom()
+        epochs_expr = ("NUM", 500)
+        lr_expr = ("NUM", 0.5)
+        if self.peek().kind in ("NUM", "NAME"):
+            epochs_expr = self.parse_atom()
+        if self.peek().kind in ("NUM", "NAME"):
+            lr_expr = self.parse_atom()
+        loss_target = None
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume_tit_or_eq()
+            loss_target = self.parse_target_lvalue()
+        return ("AI_NET_TRAIN", name_expr, in_expr, target_expr, epochs_expr, lr_expr, loss_target, tok.line)
+
+    def _parse_ai_net_predict(self, tok):
+        self.consume("AI_NET_PREDICT")
+        name_expr = self.parse_atom()
+        in_expr = self.parse_atom()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume_tit_or_eq()
+        out_target = self.parse_target_lvalue()
+        return ("AI_NET_PREDICT", name_expr, in_expr, out_target, tok.line)
+
+    def _parse_ai_net_classify(self, tok):
+        self.consume("AI_NET_CLASSIFY")
+        name_expr = self.parse_atom()
+        in_expr = self.parse_atom()
+        thresh_expr = ("NUM", 0.5)
+        if self.peek().kind in ("NUM", "NAME") and self.peek().kind not in ("TIT", "EQ", "="):
+            thresh_expr = self.parse_atom()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume_tit_or_eq()
+        class_target = self.parse_target_lvalue()
+        return ("AI_NET_CLASSIFY", name_expr, in_expr, thresh_expr, class_target, tok.line)
+
+    def _parse_ai_net_save(self, tok):
+        self.consume("AI_NET_SAVE")
+        name_expr = self.parse_atom()
+        path_expr = self.parse_atom()
+        return ("AI_NET_SAVE", name_expr, path_expr, tok.line)
+
+    def _parse_ai_net_load(self, tok):
+        self.consume("AI_NET_LOAD")
+        name_expr = self.parse_atom()
+        path_expr = self.parse_atom()
+        return ("AI_NET_LOAD", name_expr, path_expr, tok.line)
+
+    def _parse_ai_agent_new(self, tok):
+        self.consume("AI_AGENT_NEW")
+        name_expr = self.parse_atom()
+        actions_expr = self.parse_atom()
+        lr_expr = ("NUM", 0.2)
+        gamma_expr = ("NUM", 0.9)
+        epsilon_expr = ("NUM", 0.1)
+        if self.peek().kind in ("NUM", "NAME"):
+            lr_expr = self.parse_atom()
+        if self.peek().kind in ("NUM", "NAME"):
+            gamma_expr = self.parse_atom()
+        if self.peek().kind in ("NUM", "NAME"):
+            epsilon_expr = self.parse_atom()
+        return ("AI_AGENT_NEW", name_expr, actions_expr, lr_expr, gamma_expr, epsilon_expr, tok.line)
+
+    def _parse_ai_agent_act(self, tok):
+        self.consume("AI_AGENT_ACT")
+        name_expr = self.parse_atom()
+        state_expr = self.parse_atom()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume_tit_or_eq()
+        act_target = self.parse_target_lvalue()
+        return ("AI_AGENT_ACT", name_expr, state_expr, act_target, tok.line)
+
+    def _parse_ai_agent_reward(self, tok):
+        self.consume("AI_AGENT_REWARD")
+        name_expr = self.parse_atom()
+        state_expr = self.parse_atom()
+        act_expr = self.parse_atom()
+        reward_expr = self.parse_atom()
+        next_state_expr = self.parse_atom()
+        return ("AI_AGENT_REWARD", name_expr, state_expr, act_expr, reward_expr, next_state_expr, tok.line)
+
+    def _parse_ai_agent_save(self, tok):
+        self.consume("AI_AGENT_SAVE")
+        name_expr = self.parse_atom()
+        path_expr = self.parse_atom()
+        return ("AI_AGENT_SAVE", name_expr, path_expr, tok.line)
+
+    def _parse_ai_agent_load(self, tok):
+        self.consume("AI_AGENT_LOAD")
+        name_expr = self.parse_atom()
+        path_expr = self.parse_atom()
+        return ("AI_AGENT_LOAD", name_expr, path_expr, tok.line)
+
+    def _parse_ai_tokenize(self, tok):
+        self.consume("AI_TOKENIZE")
+        text_expr = self.parse_atom()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume_tit_or_eq()
+        target = self.parse_target_lvalue()
+        return ("AI_TOKENIZE", text_expr, target, tok.line)
+
+    def _parse_ai_embed(self, tok):
+        self.consume("AI_EMBED")
+        tokens_expr = self.parse_atom()
+        vocab_expr = self.parse_atom()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume_tit_or_eq()
+        target = self.parse_target_lvalue()
+        return ("AI_EMBED", tokens_expr, vocab_expr, target, tok.line)
+
+    def _parse_ai_sim(self, tok):
+        self.consume("AI_SIM")
+        vec1_expr = self.parse_atom()
+        vec2_expr = self.parse_atom()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume_tit_or_eq()
+        target = self.parse_target_lvalue()
+        return ("AI_SIM", vec1_expr, vec2_expr, target, tok.line)
+
+    def _parse_ai_ngram_train(self, tok):
+        self.consume("AI_NGRAM_TRAIN")
+        name_expr = self.parse_atom()
+        text_expr = self.parse_atom()
+        n_expr = ("NUM", 2)
+        if self.peek().kind in ("NUM", "NAME"):
+            n_expr = self.parse_atom()
+        return ("AI_NGRAM_TRAIN", name_expr, text_expr, n_expr, tok.line)
+
+    def _parse_ai_ngram_gen(self, tok):
+        self.consume("AI_NGRAM_GEN")
+        name_expr = self.parse_atom()
+        seed_expr = self.parse_atom()
+        len_expr = self.parse_atom()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume_tit_or_eq()
+        target = self.parse_target_lvalue()
+        return ("AI_NGRAM_GEN", name_expr, seed_expr, len_expr, target, tok.line)
+
+    def _parse_ai_ui_net(self, tok):
+        self.consume("AI_UI_NET")
+        name_expr = self.parse_atom()
+        x = self.parse_coord_part()
+        self.consume(":")
+        y = self.parse_coord_part()
+        w = self.parse_coord_part()
+        self.consume(":")
+        h = self.parse_coord_part()
+        return ("AI_UI_NET", name_expr, x, y, w, h, tok.line)
+
+    def _parse_ai_ui_agent(self, tok):
+        self.consume("AI_UI_AGENT")
+        name_expr = self.parse_atom()
+        x = self.parse_coord_part()
+        self.consume(":")
+        y = self.parse_coord_part()
+        w = self.parse_coord_part()
+        self.consume(":")
+        h = self.parse_coord_part()
+        return ("AI_UI_AGENT", name_expr, x, y, w, h, tok.line)
+
+    def _parse_ai_ui_chat(self, tok):
+        self.consume("AI_UI_CHAT")
+        user_expr = self.parse_atom()
+        if self.pos + 1 < len(self.tokens) and self.tokens[self.pos + 1].kind == ":":
+            bot_expr = ("STR", "")
+        else:
+            bot_expr = self.parse_atom()
+        x = self.parse_coord_part()
+        self.consume(":")
+        y = self.parse_coord_part()
+        w = self.parse_coord_part()
+        self.consume(":")
+        h = self.parse_coord_part()
+        return ("AI_UI_CHAT", user_expr, bot_expr, x, y, w, h, tok.line)
+
+    def _parse_os_ai_anomaly_check(self, tok):
+        self.consume("OS_AI_ANOMALY_CHECK")
+        metrics_expr = None
+        if self.peek().kind not in ("TIT", "EQ", "=") and self.peek().kind in ("[", "NAME", "STR", "NUM"):
+            metrics_expr = self.parse_atom()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume_tit_or_eq()
+        target = self.parse_target_lvalue()
+        return ("OS_AI_ANOMALY_CHECK", metrics_expr, target, tok.line)
+
+    def _parse_os_ai_assistant(self, tok):
+        self.consume("OS_AI_ASSISTANT")
+        prompt_expr = self.parse_atom()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume_tit_or_eq()
+        target = self.parse_target_lvalue()
+        return ("OS_AI_ASSISTANT", prompt_expr, target, tok.line)
+
+
     def _parse_fos(self, tok):
         self.consume("FOS")
         nxt = self.peek()
@@ -2719,6 +3307,31 @@ class Parser:
                 self.consume(")")
             return ("UI_EASE_EXPR", start_e, end_e, t_e, style_e, tok.line)
 
+        if tok.kind == "[":
+            self.consume("[")
+            items = []
+            if self.peek().kind != "]":
+                items.append(self.parse_expr())
+                while self.peek().kind in (",", "|"):
+                    self.consume(self.peek().kind)
+                    if self.peek().kind == "]":
+                        break
+                    items.append(self.parse_expr())
+            self.consume("]")
+            return ("LIST_LITERAL", items, tok.line)
+        if tok.kind == "[":
+            self.consume("[")
+            items = []
+            if self.peek().kind != "]":
+                items.append(self.parse_expr())
+                while self.peek().kind in (",", "|"):
+                    self.consume(self.peek().kind)
+                    if self.peek().kind == "]":
+                        break
+                    items.append(self.parse_expr())
+            self.consume("]")
+            return ("LIST_LITERAL", items, tok.line)
+
         if tok.kind == "NUM":
             self.consume("NUM")
             return ("NUM", tok.val)
@@ -2768,6 +3381,26 @@ class Parser:
 
     def parse_factor(self):
         tok = self.peek()
+
+        if tok.kind == "[":
+            self.consume("[")
+            items = []
+            if self.peek().kind != "]":
+                items.append(self.parse_expr())
+                while self.peek().kind in (",", "|"):
+                    self.consume(self.peek().kind)
+                    if self.peek().kind == "]":
+                        break
+                    items.append(self.parse_expr())
+            self.consume("]")
+            return ("LIST_LITERAL", items, tok.line)
+
+        if tok.kind in ("TO_STR", "TO_NUM", "TO_INT", "TO_FLOAT"):
+            op = self.consume(tok.kind).val
+            self.consume("(")
+            arg = self.parse_expr()
+            self.consume(")")
+            return ("CONVERT_CALL", op, arg, tok.line)
 
         if tok.kind in ("SQRT", "ABS", "SIN", "COS"):
             op = self.consume(tok.kind).val
@@ -2887,6 +3520,18 @@ class Parser:
 
     def parse_atom(self):
         tok = self.peek()
+        if tok.kind == "[":
+            self.consume("[")
+            items = []
+            if self.peek().kind != "]":
+                items.append(self.parse_expr())
+                while self.peek().kind in (",", "|"):
+                    self.consume(self.peek().kind)
+                    if self.peek().kind == "]":
+                        break
+                    items.append(self.parse_expr())
+            self.consume("]")
+            return ("LIST_LITERAL", items, tok.line)
         if tok.kind == "NUM":
             self.consume("NUM")
             return ("NUM", tok.val)
@@ -3149,6 +3794,9 @@ class TrappyInterpreter:
         self.current_theme = "dark"
         self.ui_elements = []
         self.last_app_env = None
+        self.ai_models = {}
+        self.ai_agents = {}
+        self.ai_ngrams = {}
         self.del_functions = {}
         self.blueprints = {}
         self.memory_blocks = {}
@@ -3324,7 +3972,28 @@ class TrappyInterpreter:
             "ICON": self._eval_icon,
             "NOTIFY_TOAST": self._eval_notify_toast,
             "UI_THEME": self._eval_ui_theme,
-            "UI_EASE": self._eval_ui_ease
+            "UI_EASE": self._eval_ui_ease,
+            "AI_NET_NEW": self._eval_ai_net_new,
+            "AI_NET_TRAIN": self._eval_ai_net_train,
+            "AI_NET_PREDICT": self._eval_ai_net_predict,
+            "AI_NET_CLASSIFY": self._eval_ai_net_classify,
+            "AI_NET_SAVE": self._eval_ai_net_save,
+            "AI_NET_LOAD": self._eval_ai_net_load,
+            "AI_AGENT_NEW": self._eval_ai_agent_new,
+            "AI_AGENT_ACT": self._eval_ai_agent_act,
+            "AI_AGENT_REWARD": self._eval_ai_agent_reward,
+            "AI_AGENT_SAVE": self._eval_ai_agent_save,
+            "AI_AGENT_LOAD": self._eval_ai_agent_load,
+            "AI_TOKENIZE": self._eval_ai_tokenize,
+            "AI_EMBED": self._eval_ai_embed,
+            "AI_SIM": self._eval_ai_sim,
+            "AI_NGRAM_TRAIN": self._eval_ai_ngram_train,
+            "AI_NGRAM_GEN": self._eval_ai_ngram_gen,
+            "AI_UI_NET": self._eval_ai_ui_net,
+            "AI_UI_AGENT": self._eval_ai_ui_agent,
+            "AI_UI_CHAT": self._eval_ai_ui_chat,
+            "OS_AI_ANOMALY_CHECK": self._eval_os_ai_anomaly_check,
+            "OS_AI_ASSISTANT": self._eval_os_ai_assistant
         }
 
     def run(self, ast):
@@ -4483,6 +5152,8 @@ class TrappyInterpreter:
             return expr
 
         kind = expr[0]
+        if kind == "LIST_LITERAL":
+            return [self.eval_expr(it, env) for it in expr[1]]
         if kind == "NUM":
             return expr[1]
         if kind == "STR":
@@ -4496,6 +5167,22 @@ class TrappyInterpreter:
             low = self.eval_expr(expr[1], env)
             high = self.eval_expr(expr[2], env)
             return random.randint(int(low), int(high))
+
+        if kind == "CONVERT_CALL":
+            _, op, arg_e, _ = expr
+            val = self.eval_expr(arg_e, env)
+            if op == "to_str":
+                return str(val)
+            elif op in ("to_num", "to_int"):
+                try:
+                    return int(float(val))
+                except Exception:
+                    return 0
+            elif op == "to_float":
+                try:
+                    return float(val)
+                except Exception:
+                    return 0.0
 
         if kind == "MATH_UNARY":
             _, op, arg_expr, line = expr
@@ -5184,6 +5871,22 @@ class TrappyInterpreter:
                 x + s * 0.2, y + s * 0.85
             ]
             canvas.create_polygon(p_pts, fill=col, outline="")
+        elif name in ("ai", "brain"):
+            # AI Neural / Brain icon
+            cx, cy = x + s * 0.5, y + s * 0.5
+            canvas.create_oval(cx - s * 0.35, cy - s * 0.35, cx + s * 0.35, cy + s * 0.35, outline=col, width=2)
+            canvas.create_oval(cx - 3, cy - 3, cx + 3, cy + 3, fill=col, outline="")
+            for a in (0.2, 0.5, 0.8):
+                canvas.create_line(x + s * a, y + s * 0.15, x + s * a, y + s * 0.85, fill=col, width=1)
+                canvas.create_line(x + s * 0.15, y + s * a, x + s * 0.85, y + s * a, fill=col, width=1)
+        elif name in ("bot", "robot"):
+            # Robot assistant icon
+            canvas.create_rectangle(x + s * 0.2, y + s * 0.25, x + s * 0.8, y + s * 0.85, outline=col, width=2)
+            canvas.create_line(x + s * 0.5, y + s * 0.1, x + s * 0.5, y + s * 0.25, fill=col, width=2)
+            canvas.create_oval(x + s * 0.45, y + s * 0.05, x + s * 0.55, y + s * 0.15, fill=col, outline="")
+            canvas.create_rectangle(x + s * 0.32, y + s * 0.4, x + s * 0.44, y + s * 0.52, fill=col, outline="")
+            canvas.create_rectangle(x + s * 0.56, y + s * 0.4, x + s * 0.68, y + s * 0.52, fill=col, outline="")
+            canvas.create_line(x + s * 0.35, y + s * 0.7, x + s * 0.65, y + s * 0.7, fill=col, width=2)
         else:
             canvas.create_oval(x + s * 0.2, y + s * 0.2, x + s * 0.8, y + s * 0.8, fill=col, outline="")
 
@@ -5243,6 +5946,320 @@ class TrappyInterpreter:
         res = ui_ease_calc(start, end, t, style)
         env.set(target_var, res)
         return res
+
+    def _eval_ai_net_new(self, stmt, env):
+        _, name_e, layers_e, act_e, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        layers = self.eval_expr(layers_e, env)
+        act = str(self.eval_expr(act_e, env)) if isinstance(act_e, tuple) else str(act_e)
+        if not isinstance(layers, list) or len(layers) < 2:
+            raise TrappyError(f"ai_net_new requires a list with at least 2 layer sizes (e.g. [2, 4, 1])", line)
+        self.ai_models[name] = MicroNeuralNet(layers, act)
+        return self.ai_models[name]
+
+    def _eval_ai_net_train(self, stmt, env):
+        _, name_e, in_e, target_e, epochs_e, lr_e, loss_target, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        if name not in self.ai_models:
+            raise TrappyError(f"Neural net '{name}' does not exist", line)
+        inputs = self.eval_expr(in_e, env)
+        targets = self.eval_expr(target_e, env)
+        epochs = int(self.eval_expr(epochs_e, env))
+        lr = float(self.eval_expr(lr_e, env))
+        loss = self.ai_models[name].train(inputs, targets, epochs, lr)
+        if loss_target:
+            self._set_target(loss_target, round(loss, 6), env, line)
+        return loss
+
+    def _eval_ai_net_predict(self, stmt, env):
+        _, name_e, in_e, out_target, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        if name not in self.ai_models:
+            raise TrappyError(f"Neural net '{name}' does not exist", line)
+        inputs = self.eval_expr(in_e, env)
+        pred = self.ai_models[name].predict(inputs)
+        clean_pred = [round(v, 4) for v in pred]
+        self._set_target(out_target, clean_pred, env, line)
+        return clean_pred
+
+    def _eval_ai_net_classify(self, stmt, env):
+        _, name_e, in_e, thresh_e, class_target, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        if name not in self.ai_models:
+            raise TrappyError(f"Neural net '{name}' does not exist", line)
+        inputs = self.eval_expr(in_e, env)
+        thresh = float(self.eval_expr(thresh_e, env))
+        c = self.ai_models[name].classify(inputs, threshold=thresh)
+        self._set_target(class_target, c, env, line)
+        return c
+
+    def _eval_ai_net_save(self, stmt, env):
+        _, name_e, path_e, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        path = str(self.eval_expr(path_e, env))
+        if name not in self.ai_models:
+            raise TrappyError(f"Neural net '{name}' does not exist", line)
+        data = self.ai_models[name].to_dict()
+        data_str = json.dumps(data)
+        if self.os_kernel and path.startswith("/"):
+            self.os_kernel.vfs_write(path, data_str)
+        else:
+            safe = sanitize_path(path)
+            with open(safe, "w", encoding="utf-8") as f:
+                f.write(data_str)
+        return True
+
+    def _eval_ai_net_load(self, stmt, env):
+        _, name_e, path_e, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        path = str(self.eval_expr(path_e, env))
+        data_str = ""
+        if self.os_kernel and path.startswith("/"):
+            data_str = self.os_kernel.vfs_read(path)
+        else:
+            safe = sanitize_path(path)
+            with open(safe, "r", encoding="utf-8") as f:
+                data_str = f.read()
+        data = json.loads(data_str)
+        self.ai_models[name] = MicroNeuralNet.from_dict(data)
+        return True
+
+    def _eval_ai_agent_new(self, stmt, env):
+        _, name_e, actions_e, lr_e, gamma_e, eps_e, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        actions = self.eval_expr(actions_e, env)
+        lr = float(self.eval_expr(lr_e, env))
+        gamma = float(self.eval_expr(gamma_e, env))
+        eps = float(self.eval_expr(eps_e, env))
+        self.ai_agents[name] = MicroRLAgent(actions, lr, gamma, eps)
+        return self.ai_agents[name]
+
+    def _eval_ai_agent_act(self, stmt, env):
+        _, name_e, state_e, act_target, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        if name not in self.ai_agents:
+            raise TrappyError(f"RL agent '{name}' does not exist", line)
+        state = self.eval_expr(state_e, env)
+        action = self.ai_agents[name].act(state)
+        self._set_target(act_target, action, env, line)
+        return action
+
+    def _eval_ai_agent_reward(self, stmt, env):
+        _, name_e, state_e, act_e, reward_e, next_s_e, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        if name not in self.ai_agents:
+            raise TrappyError(f"RL agent '{name}' does not exist", line)
+        state = self.eval_expr(state_e, env)
+        action = self.eval_expr(act_e, env)
+        reward_val = float(self.eval_expr(reward_e, env))
+        next_state = self.eval_expr(next_s_e, env)
+        return self.ai_agents[name].reward(state, action, reward_val, next_state)
+
+    def _eval_ai_agent_save(self, stmt, env):
+        _, name_e, path_e, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        path = str(self.eval_expr(path_e, env))
+        if name not in self.ai_agents:
+            raise TrappyError(f"RL agent '{name}' does not exist", line)
+        data = self.ai_agents[name].to_dict()
+        data_str = json.dumps(data)
+        if self.os_kernel and path.startswith("/"):
+            self.os_kernel.vfs_write(path, data_str)
+        else:
+            safe = sanitize_path(path)
+            with open(safe, "w", encoding="utf-8") as f:
+                f.write(data_str)
+        return True
+
+    def _eval_ai_agent_load(self, stmt, env):
+        _, name_e, path_e, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        path = str(self.eval_expr(path_e, env))
+        data_str = ""
+        if self.os_kernel and path.startswith("/"):
+            data_str = self.os_kernel.vfs_read(path)
+        else:
+            safe = sanitize_path(path)
+            with open(safe, "r", encoding="utf-8") as f:
+                data_str = f.read()
+        data = json.loads(data_str)
+        self.ai_agents[name] = MicroRLAgent.from_dict(data)
+        return True
+
+    def _eval_ai_tokenize(self, stmt, env):
+        _, text_e, target, line = stmt
+        text_val = str(self.eval_expr(text_e, env))
+        tokens = ai_tokenize_text(text_val)
+        self._set_target(target, tokens, env, line)
+        return tokens
+
+    def _eval_ai_embed(self, stmt, env):
+        _, tokens_e, vocab_e, target, line = stmt
+        toks = self.eval_expr(tokens_e, env)
+        vocab = self.eval_expr(vocab_e, env)
+        vec = ai_embed_tokens(toks, vocab)
+        self._set_target(target, vec, env, line)
+        return vec
+
+    def _eval_ai_sim(self, stmt, env):
+        _, v1_e, v2_e, target, line = stmt
+        v1 = self.eval_expr(v1_e, env)
+        v2 = self.eval_expr(v2_e, env)
+        sim = vector_cosine_sim(v1, v2)
+        self._set_target(target, sim, env, line)
+        return sim
+
+    def _eval_ai_ngram_train(self, stmt, env):
+        _, name_e, text_e, n_e, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        text_val = str(self.eval_expr(text_e, env))
+        n_val = int(self.eval_expr(n_e, env))
+        if name not in self.ai_ngrams:
+            self.ai_ngrams[name] = MicroNGram(n_val)
+        self.ai_ngrams[name].train(text_val)
+        return True
+
+    def _eval_ai_ngram_gen(self, stmt, env):
+        _, name_e, seed_e, len_e, target, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        if name not in self.ai_ngrams:
+            raise TrappyError(f"NGram model '{name}' does not exist", line)
+        seed = str(self.eval_expr(seed_e, env))
+        length = int(self.eval_expr(len_e, env))
+        res = self.ai_ngrams[name].generate(seed, length)
+        self._set_target(target, res, env, line)
+        return res
+
+    def _eval_ai_ui_net(self, stmt, env):
+        _, name_e, x_e, y_e, w_e, h_e, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        x = self.eval_coord(x_e, env)
+        y = self.eval_coord(y_e, env)
+        w = self.eval_coord(w_e, env)
+        h = self.eval_coord(h_e, env)
+
+        self.ui_elements.append({
+            "type": "ai_ui_net",
+            "name": name, "x": x, "y": y, "w": w, "h": h
+        })
+
+        if self.gui and self.gui.canvas:
+            theme = THEMES.get(self.current_theme, THEMES["dark"])
+            # Card background
+            card_pts = get_rounded_rect_points(x, y, x + w, y + h, 12)
+            self.gui.canvas.create_polygon(card_pts, smooth=True, fill=theme["card_bg"], outline=theme["card_border"], width=1)
+            self.gui.canvas.create_text(x + 16, y + 18, text=f"NEURAL NET: {name.upper()}", fill=theme["accent"], font=("Segoe UI", 9, "bold"), anchor="w")
+            
+            net = self.ai_models.get(name)
+            if net:
+                num_layers = len(net.layers)
+                layer_spacing = (w - 40) / max(1, num_layers - 1)
+                node_coords = []
+                for l_idx, l_size in enumerate(net.layers):
+                    col_x = x + 20 + l_idx * layer_spacing
+                    row_spacing = (h - 60) / max(1, l_size + 1)
+                    layer_nodes = []
+                    for n_idx in range(l_size):
+                        node_y = y + 45 + (n_idx + 1) * row_spacing
+                        layer_nodes.append((col_x, node_y))
+                    node_coords.append(layer_nodes)
+                
+                # Draw connecting lines
+                for l_idx in range(len(node_coords) - 1):
+                    for i, (x1, y1) in enumerate(node_coords[l_idx]):
+                        for j, (x2, y2) in enumerate(node_coords[l_idx + 1]):
+                            weight = net.weights[l_idx][i][j] if l_idx < len(net.weights) and i < len(net.weights[l_idx]) and j < len(net.weights[l_idx][i]) else 0.5
+                            col = "#00ffcc" if weight >= 0 else "#ff0055"
+                            line_w = max(1, min(4, int(abs(weight) * 2)))
+                            self.gui.canvas.create_line(x1, y1, x2, y2, fill=col, width=line_w)
+                
+                # Draw neuron circles
+                for l_idx, layer_nodes in enumerate(node_coords):
+                    for nx, ny in layer_nodes:
+                        self.gui.canvas.create_oval(nx - 7, ny - 7, nx + 7, ny + 7, fill=theme["accent"], outline="#ffffff", width=1)
+
+    def _eval_ai_ui_agent(self, stmt, env):
+        _, name_e, x_e, y_e, w_e, h_e, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        x = self.eval_coord(x_e, env)
+        y = self.eval_coord(y_e, env)
+        w = self.eval_coord(w_e, env)
+        h = self.eval_coord(h_e, env)
+
+        self.ui_elements.append({
+            "type": "ai_ui_agent",
+            "name": name, "x": x, "y": y, "w": w, "h": h
+        })
+
+        if self.gui and self.gui.canvas:
+            theme = THEMES.get(self.current_theme, THEMES["dark"])
+            card_pts = get_rounded_rect_points(x, y, x + w, y + h, 12)
+            self.gui.canvas.create_polygon(card_pts, smooth=True, fill=theme["card_bg"], outline=theme["card_border"], width=1)
+            self.gui.canvas.create_text(x + 16, y + 18, text=f"RL AGENT: {name.upper()}", fill=theme["accent"], font=("Segoe UI", 9, "bold"), anchor="w")
+            agent = self.ai_agents.get(name)
+            if agent:
+                self.gui.canvas.create_text(x + 16, y + 38, text=f"Actions: {len(agent.actions)} | States Explored: {len(agent.q_table)}", fill="#a1a1aa", font=("Segoe UI", 8), anchor="w")
+                row_y = y + 60
+                for a_idx, act in enumerate(agent.actions[:4]):
+                    self.gui.canvas.create_text(x + 20, row_y, text=f"Action {act}:", fill="#f4f4f5", font=("Segoe UI", 8), anchor="w")
+                    bar_pts = get_rounded_rect_points(x + 85, row_y - 6, x + w - 20, row_y + 6, 4)
+                    self.gui.canvas.create_polygon(bar_pts, smooth=True, fill=theme["track"], outline="")
+                    fill_w = max(4, min(w - 105, (a_idx + 1) * 35))
+                    fill_pts = get_rounded_rect_points(x + 85, row_y - 6, x + 85 + fill_w, row_y + 6, 4)
+                    self.gui.canvas.create_polygon(fill_pts, smooth=True, fill=theme["accent"], outline="")
+                    row_y += 24
+
+    def _eval_ai_ui_chat(self, stmt, env):
+        _, user_e, bot_e, x_e, y_e, w_e, h_e, line = stmt
+        user_msg = str(self.eval_expr(user_e, env))
+        bot_msg = str(self.eval_expr(bot_e, env))
+        x = self.eval_coord(x_e, env)
+        y = self.eval_coord(y_e, env)
+        w = self.eval_coord(w_e, env)
+        h = self.eval_coord(h_e, env)
+
+        self.ui_elements.append({
+            "type": "ai_ui_chat",
+            "user": user_msg, "bot": bot_msg,
+            "x": x, "y": y, "w": w, "h": h
+        })
+
+        if self.gui and self.gui.canvas:
+            theme = THEMES.get(self.current_theme, THEMES["dark"])
+            # Outer container
+            card_pts = get_rounded_rect_points(x, y, x + w, y + h, 12)
+            self.gui.canvas.create_polygon(card_pts, smooth=True, fill=theme["bg"], outline=theme["card_border"], width=1)
+            # User bubble (Right)
+            u_w = min(w - 60, len(user_msg) * 8 + 24)
+            u_x1 = x + w - u_w - 15
+            u_pts = get_rounded_rect_points(u_x1, y + 15, x + w - 15, y + 45, 8)
+            self.gui.canvas.create_polygon(u_pts, smooth=True, fill=theme["accent"], outline="")
+            self.gui.canvas.create_text(u_x1 + 10, y + 30, text=user_msg, fill=theme.get("accent_text", "#000000"), font=("Segoe UI", 9, "bold"), anchor="w")
+            # Bot bubble (Left)
+            b_w = min(w - 60, len(bot_msg) * 8 + 36)
+            b_x2 = x + 15 + b_w
+            b_pts = get_rounded_rect_points(x + 15, y + 55, b_x2, y + 85, 8)
+            self.gui.canvas.create_polygon(b_pts, smooth=True, fill=theme["card_bg"], outline=theme["card_border"], width=1)
+            self.gui.canvas.create_text(x + 25, y + 70, text=bot_msg, fill="#f4f4f5", font=("Segoe UI", 9), anchor="w")
+
+    def _eval_os_ai_anomaly_check(self, stmt, env):
+        _, metrics_e, target, line = stmt
+        if not self.os_kernel:
+            raise TrappyError("os_ai_anomaly_check requires active TrappyOSKernel", line)
+        metrics = self.eval_expr(metrics_e, env) if metrics_e is not None else None
+        report = self.os_kernel.os_ai_anomaly_check(metrics)
+        self._set_target(target, report, env, line)
+        return report
+
+    def _eval_os_ai_assistant(self, stmt, env):
+        _, prompt_e, target, line = stmt
+        if not self.os_kernel:
+            raise TrappyError("os_ai_assistant requires active TrappyOSKernel", line)
+        prompt = str(self.eval_expr(prompt_e, env))
+        resp = self.os_kernel.os_ai_assistant(prompt)
+        self._set_target(target, resp, env, line)
+        return resp
+
 
 
 def run_trappy(code, safe_mode=False):

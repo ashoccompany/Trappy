@@ -1,0 +1,50 @@
+trst
+# ==============================================================================
+# TRAPPY v1.7 - MICRO-AI ENGINE & INTELLIGENT OS DEMO
+# Demonstrates Neural Networks, Reinforcement Learning, NLP, and Modern UI.
+# ==============================================================================
+
+out "Starting Trappy Micro-AI Demo..."
+
+# 1. Neural Network: Train XOR logic gate
+out "Initializing Micro Neural Network..."
+ai_net_new "xor_net" [2, 4, 1] "sigmoid"
+ai_net_train "xor_net" [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]] [[0.0], [1.0], [1.0], [0.0]] 1200 1.0 tit loss
+out "XOR Training Complete. Final MSE Loss: " + to_str(loss)
+
+ai_net_predict "xor_net" [1.0, 0.0] tit pred
+ai_net_classify "xor_net" [1.0, 0.0] 0.5 tit cls_label
+out "Prediction for [1.0, 0.0]: " + to_str(pred)
+out "Classification for [1.0, 0.0]: " + to_str(cls_label)
+
+# 2. Reinforcement Learning: Tabular Q-Learning Agent
+out "Initializing Q-Learning Agent..."
+ai_agent_new "navigator" ["up", "down", "left", "right"] 0.2 0.9 0.1
+ai_agent_reward "navigator" "room_1" "right" 10.0 "room_2"
+ai_agent_act "navigator" "room_1" tit best_move
+out "Agent Recommended Action from room_1: " + best_move
+
+# 3. Natural Language Processing & Vector Embeddings
+out "Processing Natural Language Tokens..."
+ai_tokenize "Trappy is fast, intelligent, and secure!" tit tokens
+ai_embed tokens 16 tit vector_a
+ai_sim vector_a vector_a tit sim_score
+out "Self-similarity score: " + to_str(sim_score)
+
+# 4. Markov N-Gram Text Generation
+out "Training Markov N-Gram Language Model..."
+ai_ngram_train "corpus_ai" "trappy is powerful trappy is modern trappy is secure" 2
+ai_ngram_gen "corpus_ai" "trappy" 5 tit generated_phrase
+out "Generated Text: " + generated_phrase
+
+# 5. Boot OS and Run AI Security Anomaly Check
+out "Booting TrappyOS Kernel..."
+os_boot "AegisCore" "1.7.0"
+os_ai_anomaly_check [12.0, 28.0, 6.0] tit anomaly_report
+out "Kernel AI Status: " + anomaly_report.status
+
+os_ai_assistant "diagnose system health" tit ai_diagnosis
+out "OS AI Assistant: " + ai_diagnosis
+
+out "Micro-AI Demo Execution Finished Successfully!"
+tren

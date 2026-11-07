@@ -1,4 +1,4 @@
-# Trappy Programming Language - Official Reference Manual (v1.6.0 Release)
+# Trappy Programming Language - Official Reference Manual (v1.7.0 Release)
 
 Copyright (c) Trappy Language Project. All rights reserved.  
 Official File Extension: `.trappy`  
@@ -39,6 +39,7 @@ Standalone Studio: `TrappyIDE.exe`
 23. [Modern Control Flow & Error Handling](#23-modern-control-flow--error-handling)
 24. [OS Development & Security Architecture](#24-os-development--security-architecture)
 25. [Modern UI/GUI Suite](#25-modern-uigui-suite)
+26. [Micro-AI Development Engine](#26-micro-ai-development-engine)
 
 ---
 
@@ -562,3 +563,68 @@ tren
 * `notify_toast`: Floating notification card with auto-dismiss.
 * `ui_theme`: Active palette switching (dark, cyber, glass, light, nord).
 * `ui_ease`: High-precision animation easing (linear, ease_in, ease_out, ease_in_out, bounce).
+
+
+---
+
+## 26. Micro-AI Development Engine
+
+Trappy v1.7 introduces a complete, native Micro-AI development ecosystem built directly into the language runtime with zero external dependencies:
+
+```trappy
+trst
+# 1. Neural Networks (Feedforward MLP with Backpropagation)
+ai_net_new "classifier" [2, 4, 1] "sigmoid"
+ai_net_train "classifier" [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]] [[0.0], [1.0], [1.0], [0.0]] 1500 1.0 tit loss
+ai_net_predict "classifier" [1.0, 0.0] tit prediction
+ai_net_classify "classifier" [1.0, 0.0] 0.5 tit class_idx
+ai_net_save "classifier" "models/classifier.json"
+ai_net_load "restored_model" "models/classifier.json"
+
+# 2. Reinforcement Learning (Tabular Q-Learning)
+ai_agent_new "agent" ["up", "down", "left", "right"] 0.2 0.9 0.1
+ai_agent_act "agent" "state_a" tit next_action
+ai_agent_reward "agent" "state_a" "right" 10.0 "state_b"
+ai_agent_save "agent" "models/agent.json"
+ai_agent_load "agent2" "models/agent.json"
+
+# 3. NLP, Embeddings & Vector Cosine Similarity
+ai_tokenize "Hello Trappy OS AI Engine!" tit tokens
+ai_embed tokens 16 tit dense_vector
+ai_sim dense_vector dense_vector tit similarity_score
+
+# 4. Probabilistic Markov N-Gram Language Model
+ai_ngram_train "text_gen" "trappy is fast trappy is secure trappy is modern" 2
+ai_ngram_gen "text_gen" "trappy" 5 tit generated_sentence
+
+# 5. Visual AI UI Components
+ai_ui_net "classifier" 50:50 240:160
+ai_ui_agent "agent" 310:50 240:160
+ai_ui_chat "Hello Agent" "Ready to assist." 50:230 500:140
+
+# 6. Kernel AI Integration & Diagnosis
+os_ai_anomaly_check [10.0, 25.0, 4.0] tit anomaly_report
+os_ai_assistant "diagnose system health" tit response
+tren
+```
+
+* `ai_net_new`: Instantiates a feedforward neural network with Xavier initialization and configurable activation function (sigmoid, relu, tanh).
+* `ai_net_train`: Trains the network via backpropagation and gradient descent, returning final mean squared error loss.
+* `ai_net_predict`: Performs forward pass inference prediction on input feature vectors.
+* `ai_net_classify`: Categorizes inputs using argmax class index or binary threshold.
+* `ai_net_save` / `ai_net_load`: Serializes and restores neural network models to/from JSON.
+* `ai_agent_new`: Instantiates a tabular Q-learning RL agent with configurable learning rate, discount factor, and epsilon exploration rate.
+* `ai_agent_act`: Queries the RL agent for action selection using an epsilon-greedy policy.
+* `ai_agent_reward`: Updates Bellman equation Q-values based on environment reward feedback and state transitions.
+* `ai_agent_save` / `ai_agent_load`: Saves and restores RL agent Q-tables to/from disk.
+* `ai_tokenize`: Normalizes and splits input text into lowercase alphanumeric tokens.
+* `ai_embed`: Encodes token lists into dense numerical vectors via feature hashing or vocabulary bags-of-words.
+* `ai_sim`: Computes cosine similarity between two embedding vectors (-1.0 to 1.0).
+* `ai_ngram_train`: Learns probabilistic Markov transitions from a source text corpus.
+* `ai_ngram_gen`: Generates synthetic sentences from learned Markov n-gram models starting from seed prompts.
+* `ai_ui_net`: Draws interactive topology diagrams of neural net layers and synaptic weights on the canvas.
+* `ai_ui_agent`: Renders active RL agent policies, Q-values, and state statistics.
+* `ai_ui_chat`: Draws modern conversational chat cards with avatar icons and message bubbles.
+* `os_ai_anomaly_check`: Kernel AI telemetry scanner detecting abnormal CPU, memory, and syscall spikes.
+* `os_ai_assistant`: Interactive conversational assistant for kernel diagnosis, system queries, and security remediation.
+* `[...]`: Native bracket syntax for multi-dimensional lists, matrices, layers, and coordinate arrays.

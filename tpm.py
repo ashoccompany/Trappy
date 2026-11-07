@@ -28,7 +28,7 @@ def ensure_dirs():
                     "file": "packet_utils.trappy"
                 },
                 "physics_2d": {
-                    "version": "1.15.0",
+                    "version": "1.7.0",
                     "author": "TrappyGames",
                     "description": "Standard 2D velocity, gravity calculation, and box bounce physics",
                     "file": "physics_2d.trappy"
@@ -108,7 +108,7 @@ def install_package(pkg_name_or_url):
         target_path = os.path.join(PKG_DIR, target_name)
         print(f"Downloading package from: {pkg_name_or_url} ...")
         try:
-            req = urllib.request.Request(pkg_name_or_url, headers={'User-Agent': 'TPM/1.6.0'})
+            req = urllib.request.Request(pkg_name_or_url, headers={'User-Agent': 'TPM/1.7.0'})
             with urllib.request.urlopen(req, timeout=15) as resp:
                 content = resp.read()
             with open(target_path, "wb") as f:
