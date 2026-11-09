@@ -4613,6 +4613,9 @@ class TrappyInterpreter:
         _, content_expr, filename, line = stmt
         content = str(self.eval_expr(content_expr, env))
         safe_name = sanitize_path(filename)
+        parent_dir = os.path.dirname(safe_name)
+        if parent_dir and not os.path.exists(parent_dir):
+            os.makedirs(parent_dir, exist_ok=True)
         with open(safe_name, "w", encoding="utf-8") as f:
             f.write(content)
 
@@ -4652,8 +4655,11 @@ class TrappyInterpreter:
         _, url_expr, file_path, line = stmt
         url = validate_url(str(self.eval_expr(url_expr, env)), line)
         safe_path = sanitize_path(file_path)
+        parent_dir = os.path.dirname(safe_path)
+        if parent_dir and not os.path.exists(parent_dir):
+            os.makedirs(parent_dir, exist_ok=True)
         try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'TrappyRuntime/1.15'})
+            req = urllib.request.Request(url, headers={'User-Agent': 'TrappyRuntime/1.7'})
             with urllib.request.urlopen(req, timeout=10.0) as resp:
                 with open(safe_path, "wb") as f:
                     f.write(resp.read())
@@ -4954,6 +4960,9 @@ class TrappyInterpreter:
         fname = str(self.eval_expr(file_expr, env))
         content = str(self.eval_expr(content_expr, env))
         safe_name = sanitize_path(fname)
+        parent_dir = os.path.dirname(safe_name)
+        if parent_dir and not os.path.exists(parent_dir):
+            os.makedirs(parent_dir, exist_ok=True)
         with open(safe_name, "w", encoding="utf-8") as f:
             f.write(content)
 
@@ -4972,6 +4981,9 @@ class TrappyInterpreter:
         fname = str(self.eval_expr(file_expr, env))
         content = str(self.eval_expr(content_expr, env))
         safe_name = sanitize_path(fname)
+        parent_dir = os.path.dirname(safe_name)
+        if parent_dir and not os.path.exists(parent_dir):
+            os.makedirs(parent_dir, exist_ok=True)
         with open(safe_name, "a", encoding="utf-8") as f:
             f.write(content)
 
@@ -6005,6 +6017,9 @@ class TrappyInterpreter:
             self.os_kernel.vfs_write(path, data_str)
         else:
             safe = sanitize_path(path)
+            parent_dir = os.path.dirname(safe)
+            if parent_dir and not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
             with open(safe, "w", encoding="utf-8") as f:
                 f.write(data_str)
         return True
@@ -6018,10 +6033,15 @@ class TrappyInterpreter:
             data_str = self.os_kernel.vfs_read(path)
         else:
             safe = sanitize_path(path)
+            if not os.path.exists(safe):
+                raise TrappyError(f"Neural net model file not found: '{path}'", line)
             with open(safe, "r", encoding="utf-8") as f:
                 data_str = f.read()
-        data = json.loads(data_str)
-        self.ai_models[name] = MicroNeuralNet.from_dict(data)
+        try:
+            data = json.loads(data_str)
+            self.ai_models[name] = MicroNeuralNet.from_dict(data)
+        except Exception as e:
+            raise TrappyError(f"Corrupt or invalid neural model data in '{path}': {e}", line)
         return True
 
     def _eval_ai_agent_new(self, stmt, env):
@@ -6067,6 +6087,9 @@ class TrappyInterpreter:
             self.os_kernel.vfs_write(path, data_str)
         else:
             safe = sanitize_path(path)
+            parent_dir = os.path.dirname(safe)
+            if parent_dir and not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
             with open(safe, "w", encoding="utf-8") as f:
                 f.write(data_str)
         return True
@@ -6080,10 +6103,15 @@ class TrappyInterpreter:
             data_str = self.os_kernel.vfs_read(path)
         else:
             safe = sanitize_path(path)
+            if not os.path.exists(safe):
+                raise TrappyError(f"RL agent model file not found: '{path}'", line)
             with open(safe, "r", encoding="utf-8") as f:
                 data_str = f.read()
-        data = json.loads(data_str)
-        self.ai_agents[name] = MicroRLAgent.from_dict(data)
+        try:
+            data = json.loads(data_str)
+            self.ai_agents[name] = MicroRLAgent.from_dict(data)
+        except Exception as e:
+            raise TrappyError(f"Corrupt or invalid agent model data in '{path}': {e}", line)
         return True
 
     def _eval_ai_tokenize(self, stmt, env):

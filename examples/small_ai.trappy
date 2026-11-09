@@ -1,0 +1,28 @@
+trst
+out "--- TRAPPY SMALL AI DEMO ---"
+
+# 1. Initialize Neural Network (2 inputs, 4 hidden neurons, 1 output)
+out "1. Initializing Neural Network..."
+ai_net_new "brain" [2, 4, 1] "sigmoid"
+
+# 2. Train on XOR Truth Table using backpropagation
+out "2. Training Model..."
+ai_net_train "brain" [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]] [[0.0], [1.0], [1.0], [0.0]] 1000 1.0 tit loss
+out "Training Complete. Final Loss: " + to_str(loss)
+
+# 3. Predict inference on input [1.0, 0.0]
+ai_net_predict "brain" [1.0, 0.0] tit prediction
+ai_net_classify "brain" [1.0, 0.0] 0.5 tit class_idx
+
+out "Input [1, 0] Output: " + to_str(prediction)
+out "Predicted Class: " + to_str(class_idx)
+
+# 4. Save trained weights to disk (nested models/ directory)
+ai_net_save "brain" "models/brain.json"
+out "Model saved to models/brain.json"
+
+# 5. Load model back to verify persistence
+ai_net_load "restored" "models/brain.json"
+ai_net_predict "restored" [1.0, 0.0] tit restored_pred
+out "Restored Model Output: " + to_str(restored_pred)
+tren

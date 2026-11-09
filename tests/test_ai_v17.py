@@ -135,5 +135,44 @@ tren
         self.assertIn("AegisOS", assist_status)
         self.assertIn("SECURE", assist_sec)
 
+    def test_ai_save_creates_nested_parent_dirs(self):
+        nested_model = os.path.join(self.tmp_dir, "deep", "nested", "model.json").replace("\\", "/")
+        nested_agent = os.path.join(self.tmp_dir, "deep", "nested", "agent.json").replace("\\", "/")
+        code = f"""
+trst
+    ai_net_new "test_deep" [2, 1] "sigmoid"
+    ai_net_save "test_deep" "{nested_model}"
+    ai_agent_new "test_agent_deep" ["left", "right"] 0.1 0.9 0.1
+    ai_agent_save "test_agent_deep" "{nested_agent}"
+tren
+"""
+        interp = trappy.run_trappy(code)
+        self.assertTrue(os.path.exists(nested_model))
+        self.assertTrue(os.path.exists(nested_agent))
+
+    def test_ai_load_missing_file_raises_clean_error(self):
+        code = """
+trst
+    ai_net_load "ghost_net" "missing/dir/nonexistent.json"
+tren
+"""
+        with self.assertRaises(trappy.TrappyError) as ctx:
+            trappy.run_trappy(code)
+        self.assertIn("not found", str(ctx.exception).lower())
+
+    def test_file_write_creates_nested_parent_dirs(self):
+        nested_log = os.path.join(self.tmp_dir, "logs", "2026", "audit.log").replace("\\", "/")
+        code = f"""
+trst
+    file_write "{nested_log}":"test log entry"
+    file_append "{nested_log}":" appended"
+tren
+"""
+        trappy.run_trappy(code)
+        self.assertTrue(os.path.exists(nested_log))
+        with open(nested_log, "r", encoding="utf-8") as f:
+            content = f.read()
+        self.assertEqual(content, "test log entry appended")
+
 if __name__ == "__main__":
     unittest.main()
