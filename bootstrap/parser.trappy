@@ -1,0 +1,175 @@
+# Trappy v2.0 Bootstrap Parser
+# Written 100% in Trappy language.
+# Author: ashoccompany / Asham
+# Zero generic tropes, zero external dependencies.
+
+trst
+
+fn parse_trappy tokens
+    dict tit ast
+    lst 0 eq statements
+    lpop statements tit dummy1
+
+    dget tokens:"types" tit types
+    dget tokens:"values" tit values
+    llen types tit num_tokens
+    mh 0 eq pos
+
+    # Verify opening 'trst'
+    ifr num_tokens > 0
+        lget types:0 tit first_tok
+        ifr first_tok == "NAME"
+            lget values:0 tit first_val
+            ifr first_val == "trst"
+                mh pos + 1 eq pos
+            tren
+        tren
+    tren
+
+    while pos < num_tokens
+        lget types:pos tit t_type
+        lget values:pos tit t_val
+
+        # Check closing 'tren'
+        ifr t_type == "NAME" && t_val == "tren"
+            break
+        tren
+
+        # Parse 'add_var name' or 'add_var name: val'
+        ifr t_type == "NAME" && t_val == "add_var"
+            mh pos + 1 eq pos
+            lget values:pos tit var_name
+            mh pos + 1 eq pos
+
+            dict tit stmt
+            dset stmt:"type":"ADD_VAR"
+            dset stmt:"name":var_name
+            dset stmt:"init":0
+
+            ifr pos < num_tokens
+                lget types:pos tit colon_tok
+                ifr colon_tok == ":" || colon_tok == "="
+                    mh pos + 1 eq pos
+                    lget values:pos tit init_val
+                    dset stmt:"init":init_val
+                    mh pos + 1 eq pos
+                tren
+            tren
+            lpush statements:stmt
+        else
+            # Parse 'mh left op right eq target' or 'mh expr eq target'
+            ifr t_type == "NAME" && t_val == "mh"
+                mh pos + 1 eq pos
+                lget values:pos tit left_val
+                mh pos + 1 eq pos
+
+                dict tit stmt
+                dset stmt:"type":"MH"
+                dset stmt:"left":left_val
+                dset stmt:"op":""
+                dset stmt:"right":0
+                dset stmt:"target":""
+
+                ifr pos < num_tokens
+                    lget types:pos tit op_tok
+                    ifr op_tok == "+" || op_tok == "-" || op_tok == "*" || op_tok == "/"
+                        dset stmt:"op":op_tok
+                        mh pos + 1 eq pos
+                        lget values:pos tit right_val
+                        dset stmt:"right":right_val
+                        mh pos + 1 eq pos
+                    tren
+                tren
+
+                ifr pos < num_tokens
+                    lget values:pos tit eq_tok
+                    ifr eq_tok == "eq" || eq_tok == "="
+                        mh pos + 1 eq pos
+                        lget values:pos tit target_val
+                        dset stmt:"target":target_val
+                        mh pos + 1 eq pos
+                    tren
+                tren
+                lpush statements:stmt
+            else
+                # Parse 'txt expr tit target'
+                ifr t_type == "NAME" && t_val == "txt"
+                    mh pos + 1 eq pos
+                    lget values:pos tit txt_val
+                    mh pos + 1 eq pos
+
+                    dict tit stmt
+                    dset stmt:"type":"TXT"
+                    dset stmt:"value":txt_val
+                    dset stmt:"target":""
+
+                    ifr pos < num_tokens
+                        lget values:pos tit tit_tok
+                        ifr tit_tok == "tit" || tit_tok == "eq" || tit_tok == "="
+                            mh pos + 1 eq pos
+                            lget values:pos tit target_val
+                            dset stmt:"target":target_val
+                            mh pos + 1 eq pos
+                        tren
+                    tren
+                    lpush statements:stmt
+                else
+                    # Parse 'out expr'
+                    ifr t_type == "NAME" && t_val == "out"
+                        mh pos + 1 eq pos
+                        lget values:pos tit out_val
+                        mh pos + 1 eq pos
+
+                        dict tit stmt
+                        dset stmt:"type":"OUT"
+                        dset stmt:"value":out_val
+                        lpush statements:stmt
+                    else
+                        # Parse 'call fn_name arg1 tit dest'
+                        ifr t_type == "NAME" && t_val == "call"
+                            mh pos + 1 eq pos
+                            lget values:pos tit fn_name
+                            mh pos + 1 eq pos
+
+                            dict tit stmt
+                            dset stmt:"type":"CALL"
+                            dset stmt:"name":fn_name
+                            lst 0 eq args
+                            lpop args tit dummy_arg
+                            dset stmt:"target":""
+
+                            while pos < num_tokens
+                                lget values:pos tit peek_val
+                                ifr peek_val == "tit" || peek_val == "eq" || peek_val == "="
+                                    mh pos + 1 eq pos
+                                    lget values:pos tit dest_name
+                                    dset stmt:"target":dest_name
+                                    mh pos + 1 eq pos
+                                    break
+                                tren
+                                lget types:pos tit p_type
+                                ifr p_type == "NAME" && (peek_val == "tren" || peek_val == "out" || peek_val == "mh")
+                                    break
+                                tren
+                                lget values:pos tit arg_val
+                                lpush args:arg_val
+                                mh pos + 1 eq pos
+                            tren
+                            dset stmt:"args":args
+                            lpush statements:stmt
+                        else
+                            # Skip unrecognized statement token
+                            mh pos + 1 eq pos
+                        tren
+                    tren
+                tren
+            tren
+        tren
+    tren
+
+    dset ast:"statements":statements
+    return ast
+tren
+
+tren
+

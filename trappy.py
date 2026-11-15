@@ -12,6 +12,7 @@ import json
 import subprocess
 import queue
 import hashlib
+import tempfile
 
 try:
     import tkinter as tk
@@ -20,11 +21,14 @@ except ImportError:
     tk = None
 
 try:
+    winsound = None
     import winsound
 except ImportError:
     winsound = None
 
-__version__ = "1.7.0"
+sys.setrecursionlimit(5000)
+
+__version__ = "2.0.0"
 
 class VirtualLoopbackSocket:
     _channels = {}
@@ -85,12 +89,48 @@ def sanitize_path(filename, base_dir=None, line=None):
     if isinstance(base_dir, int):
         line = base_dir
         base_dir = None
+
+    sandbox_root = os.environ.get("TRAPPY_SANDBOX_ROOT")
+    if sandbox_root:
+        sandbox_root = os.path.realpath(os.path.abspath(sandbox_root))
+        if os.path.isabs(filename):
+            target = os.path.realpath(os.path.abspath(filename))
+        else:
+            target = os.path.realpath(os.path.abspath(os.path.join(sandbox_root, filename)))
+        prefix = sandbox_root if sandbox_root.endswith(os.sep) else sandbox_root + os.sep
+        if not (target == sandbox_root or target.startswith(prefix)):
+            raise TrappySecurityError(f"Path Traversal attempt blocked: '{filename}' outside '{sandbox_root}'", line)
+        return target
+
+    trappy_root = os.path.dirname(os.path.abspath(__file__))
+    cwd = os.path.realpath(os.path.abspath(os.getcwd()))
+
+    # Block running directly from root drive without a subfolder sandbox
+    if cwd == os.path.abspath(os.sep) or (os.name == 'nt' and len(cwd) <= 3):
+        cwd = os.path.join(cwd, "trappy_sandbox")
+        os.makedirs(cwd, exist_ok=True)
+
     if base_dir is None:
-        base_dir = os.getcwd()
-    base_dir = os.path.abspath(base_dir)
-    target_path = os.path.abspath(os.path.join(base_dir, filename))
-    if not (target_path == base_dir or target_path.startswith(base_dir + os.sep)):
-        raise TrappySecurityError(f"Path Traversal attempt blocked: '{filename}'")
+        base_dir = cwd
+    else:
+        base_dir = os.path.realpath(os.path.abspath(base_dir))
+
+    if os.path.isabs(filename):
+        target_path = os.path.realpath(os.path.abspath(filename))
+    else:
+        target_path = os.path.realpath(os.path.abspath(os.path.join(base_dir, filename)))
+
+    # Check allowed boundaries: explicit base_dir, trappy_root, cwd, tempdir
+    allowed_roots = [base_dir, trappy_root, cwd, os.path.realpath(tempfile.gettempdir())]
+    is_safe = False
+    for root in allowed_roots:
+        pfx = root if root.endswith(os.sep) else root + os.sep
+        if target_path == root or target_path.startswith(pfx):
+            is_safe = True
+            break
+
+    if not is_safe:
+        raise TrappySecurityError(f"Path Traversal attempt blocked: '{filename}'", line)
     return target_path
 
 def validate_url(url, line=None):
@@ -352,7 +392,7 @@ class TrappyOSKernel:
         self.interpreter = interpreter
         self.is_booted = False
         self.os_name = "TrappyOS"
-        self.version = "1.7.0"
+        self.version = "2.0.0"
         self.boot_time = time.time()
         self.current_ring = 0
         self.active_pid = 1
@@ -383,9 +423,9 @@ class TrappyOSKernel:
             "/proc": {"type": "dir"},
             "/var": {"type": "dir"},
             "/var/log": {"type": "dir"},
-            "/etc/os-release": {"type": "file", "content": "NAME=TrappyOS\nVERSION=1.7.0\nID=trappy\n"},
+            "/etc/os-release": {"type": "file", "content": "NAME=TrappyOS\nVERSION=2.0.0\nID=trappy\n"},
             "/etc/hostname": {"type": "file", "content": "trappy-node"},
-            "/sys/kernel": {"type": "file", "content": "TrappyKernel v1.7 Core"},
+            "/sys/kernel": {"type": "file", "content": "TrappyKernel v2.0 Core"},
             "/sys/security.conf": {"type": "file", "content": "ENFORCE=1\nCANARY=1\nNX=1\n"}
         }
 
@@ -394,7 +434,7 @@ class TrappyOSKernel:
 
         self.settings = {
             "os.name": "TrappyOS",
-            "os.version": "1.7.0",
+            "os.version": "2.0.0",
             "display.mode": "computer",
             "display.orientation": "landscape",
             "display.theme": "dark",
@@ -429,7 +469,105 @@ class TrappyOSKernel:
         self.blocked_items = set()
         self.custom_defense_hooks = {}
 
+        self.mmu = {}
+        self.pipes = {}
+        self.next_pipe_fd = 100
+        self.drivers = {}
+        self.next_driver_handle = 1
+        self.instruction_quantum = 100
+        self.quantum_counter = 0
+        self.process_streams = {}
+
         self._init_default_seals()
+
+    def mmu_page_alloc(self, pid, vaddr, size, perms):
+        pid = int(pid)
+        vaddr = int(vaddr)
+        size = int(size)
+        perms = str(perms).upper()
+        if pid not in self.mmu:
+            self.mmu[pid] = {}
+        page_size = 4096
+        num_pages = max(1, (size + page_size - 1) // page_size)
+        for i in range(num_pages):
+            page_addr = vaddr + i * page_size
+            self.mmu[pid][page_addr] = {
+                "vaddr": page_addr,
+                "size": page_size,
+                "perms": perms,
+                "paddr": 0x10000000 + (pid * 0x100000) + (i * page_size)
+            }
+        return num_pages
+
+    def mmu_protect(self, pid, vaddr, perms):
+        pid = int(pid)
+        vaddr = int(vaddr)
+        perms = str(perms).upper()
+        if pid in self.mmu and vaddr in self.mmu[pid]:
+            self.mmu[pid][vaddr]["perms"] = perms
+            return True
+        if pid in self.mmu:
+            for paddr, info in self.mmu[pid].items():
+                if paddr <= vaddr < paddr + info["size"]:
+                    info["perms"] = perms
+                    return True
+        return False
+
+    def pipe_create(self):
+        r_fd = self.next_pipe_fd
+        w_fd = self.next_pipe_fd + 1
+        self.next_pipe_fd += 2
+        pipe_buf = queue.Queue()
+        self.pipes[r_fd] = {"type": "read", "queue": pipe_buf, "peer": w_fd, "closed": False}
+        self.pipes[w_fd] = {"type": "write", "queue": pipe_buf, "peer": r_fd, "closed": False}
+        return (r_fd, w_fd)
+
+    def redirect_stdout(self, pid, fd):
+        pid = int(pid)
+        fd = int(fd)
+        if pid not in self.process_streams:
+            self.process_streams[pid] = {"stdout": None, "stdin": None}
+        self.process_streams[pid]["stdout"] = fd
+        return True
+
+    def redirect_stdin(self, pid, fd):
+        pid = int(pid)
+        fd = int(fd)
+        if pid not in self.process_streams:
+            self.process_streams[pid] = {"stdout": None, "stdin": None}
+        self.process_streams[pid]["stdin"] = fd
+        return True
+
+    def driver_register(self, name, ring):
+        handle = self.next_driver_handle
+        self.next_driver_handle += 1
+        self.drivers[handle] = {
+            "handle": handle,
+            "name": str(name),
+            "ring": int(ring),
+            "hooks": {}
+        }
+        return handle
+
+    def driver_hook(self, handle, syscall_id, callback):
+        handle = int(handle)
+        if handle in self.drivers:
+            self.drivers[handle]["hooks"][str(syscall_id)] = callback
+            return True
+        return False
+
+    def step_quantum(self):
+        self.quantum_counter += 1
+        if self.quantum_counter >= self.instruction_quantum:
+            self.quantum_counter = 0
+            ready_pids = [p for p in self.processes if self.processes[p]["state"] == "RUNNING"]
+            if len(ready_pids) > 1:
+                cur_idx = ready_pids.index(self.active_pid) if self.active_pid in ready_pids else 0
+                next_pid = ready_pids[(cur_idx + 1) % len(ready_pids)]
+                old_pid = self.active_pid
+                self.active_pid = next_pid
+                return (old_pid, next_pid)
+        return None
 
     def _init_default_seals(self):
         k_content = self.vfs.get("/sys/kernel", {}).get("content", "TrappyKernel v1.7 Core")
@@ -1255,7 +1393,17 @@ def tokenize(code):
         "ai_agent_new", "ai_agent_act", "ai_agent_reward", "ai_agent_save", "ai_agent_load",
         "ai_tokenize", "ai_embed", "ai_sim", "ai_ngram_train", "ai_ngram_gen",
         "ai_ui_net", "ai_ui_agent", "ai_ui_chat",
-        "os_ai_anomaly_check", "os_ai_assistant"
+        "os_ai_anomaly_check", "os_ai_assistant",
+        "loadpk", "efr", "brch", "cas", "othr", "txtf", "call",
+        "and", "or", "not",
+        "cam3d", "poly3d", "tilemap_init", "tilemap_draw",
+        "particle_emitter", "synth_adsr",
+        "sys_clipboard_set", "sys_clipboard_get", "sys_dialog_open", "sys_dialog_save",
+        "ui_container", "ui_tabs",
+        "ai_conv2d", "ai_pool2d", "ai_gru_new", "ai_gru_step", "ai_audio_fft",
+        "ai_ga_init", "ai_ga_score", "ai_ga_reproduce",
+        "os_mmu_page_alloc", "os_mmu_protect", "os_pipe", "os_redirect_stdout", "os_redirect_stdin",
+        "os_driver_register", "os_driver_hook"
     }
 
     while i < n:
@@ -1274,6 +1422,24 @@ def tokenize(code):
             while i < n and code[i] != '\n':
                 i += 1
             continue
+
+        if c == '/' and i + 1 < n:
+            if code[i + 1] == '/':
+                i += 2
+                while i < n and code[i] != '\n':
+                    i += 1
+                continue
+            if code[i + 1] == '*':
+                start_line = line
+                i += 2
+                while i + 1 < n and not (code[i] == '*' and code[i + 1] == '/'):
+                    if code[i] == '\n':
+                        line += 1
+                    i += 1
+                if i + 1 >= n:
+                    raise TrappyError("Unterminated block comment /* ... */", start_line)
+                i += 2
+                continue
 
         if c in ('"', "'"):
             quote_char = c
@@ -1297,9 +1463,23 @@ def tokenize(code):
             i += 2
             continue
 
-        if c == '!' and i + 1 < n and code[i + 1] == '=':
-            tokens.append(Token("!=", "!=", line))
+        if c == '&' and i + 1 < n and code[i + 1] == '&':
+            tokens.append(Token("&&", "&&", line))
             i += 2
+            continue
+
+        if c == '|' and i + 1 < n and code[i + 1] == '|':
+            tokens.append(Token("||", "||", line))
+            i += 2
+            continue
+
+        if c == '!':
+            if i + 1 < n and code[i + 1] == '=':
+                tokens.append(Token("!=", "!=", line))
+                i += 2
+            else:
+                tokens.append(Token("!", "!", line))
+                i += 1
             continue
 
         if c == '>' and i + 1 < n and code[i + 1] == '=':
@@ -1312,7 +1492,7 @@ def tokenize(code):
             i += 2
             continue
 
-        if c in "():+=|,><*/%[]":
+        if c in "():+=|><*/%[]{};,":
             tokens.append(Token(c, c, line))
             i += 1
             continue
@@ -1483,6 +1663,8 @@ class Parser:
             "CNT": self._parse_continue,
             "TRY": self._parse_try,
             "RETURN": self._parse_return,
+            "RT": self._parse_rt,
+            "ANSW": self._parse_answ,
             "FOS": self._parse_fos,
             "OS_BOOT": self._parse_os_boot,
             "OS_SHUTDOWN": self._parse_os_shutdown,
@@ -1561,15 +1743,46 @@ class Parser:
             "AI_UI_AGENT": self._parse_ai_ui_agent,
             "AI_UI_CHAT": self._parse_ai_ui_chat,
             "OS_AI_ANOMALY_CHECK": self._parse_os_ai_anomaly_check,
-            "OS_AI_ASSISTANT": self._parse_os_ai_assistant
+            "OS_AI_ASSISTANT": self._parse_os_ai_assistant,
+            "LOADPK": self._parse_loadpk,
+            "BRCH": self._parse_brch,
+            "TXTF": self._parse_txtf,
+            "CAM3D": self._parse_cam3d,
+            "POLY3D": self._parse_poly3d,
+            "TILEMAP_INIT": self._parse_tilemap_init,
+            "TILEMAP_DRAW": self._parse_tilemap_draw,
+            "PARTICLE_EMITTER": self._parse_particle_emitter,
+            "SYNTH_ADSR": self._parse_synth_adsr,
+            "SYS_CLIPBOARD_SET": self._parse_sys_clipboard_set,
+            "SYS_CLIPBOARD_GET": self._parse_sys_clipboard_get,
+            "SYS_DIALOG_OPEN": self._parse_sys_dialog_open,
+            "SYS_DIALOG_SAVE": self._parse_sys_dialog_save,
+            "UI_CONTAINER": self._parse_ui_container,
+            "UI_TABS": self._parse_ui_tabs,
+            "AI_CONV2D": self._parse_ai_conv2d,
+            "AI_POOL2D": self._parse_ai_pool2d,
+            "AI_GRU_NEW": self._parse_ai_gru_new,
+            "AI_GRU_STEP": self._parse_ai_gru_step,
+            "AI_AUDIO_FFT": self._parse_ai_audio_fft,
+            "AI_GA_INIT": self._parse_ai_ga_init,
+            "AI_GA_SCORE": self._parse_ai_ga_score,
+            "AI_GA_REPRODUCE": self._parse_ai_ga_reproduce,
+            "OS_MMU_PAGE_ALLOC": self._parse_os_mmu_page_alloc,
+            "OS_MMU_PROTECT": self._parse_os_mmu_protect,
+            "OS_PIPE": self._parse_os_pipe,
+            "OS_REDIRECT_STDOUT": self._parse_os_redirect_stdout,
+            "OS_REDIRECT_STDIN": self._parse_os_redirect_stdin,
+            "OS_DRIVER_REGISTER": self._parse_os_driver_register,
+            "OS_DRIVER_HOOK": self._parse_os_driver_hook,
+            "CALL": self._parse_call
         }
 
     def peek(self):
         return self.tokens[self.pos]
 
-    def consume(self, expected_kind):
+    def consume(self, expected_kind=None):
         tok = self.peek()
-        if tok.kind != expected_kind:
+        if expected_kind is not None and tok.kind != expected_kind:
             raise TrappyError(f"Expected '{expected_kind}', but got '{tok.val}'", tok.line)
         self.pos += 1
         return tok
@@ -1592,6 +1805,45 @@ class Parser:
         return self.consume("NAME").val
 
     def parse_condition(self):
+        return self.parse_or_condition()
+
+    def parse_or_condition(self):
+        node = self.parse_and_condition()
+        while self.peek().kind in ("OR", "BOR", "||"):
+            self.consume(self.peek().kind)
+            right = self.parse_and_condition()
+            node = ("LOGICAL_OR", node, right)
+        return node
+
+    def parse_and_condition(self):
+        node = self.parse_not_condition()
+        while self.peek().kind in ("AND", "BAND", "&&"):
+            self.consume(self.peek().kind)
+            right = self.parse_not_condition()
+            node = ("LOGICAL_AND", node, right)
+        return node
+
+    def parse_not_condition(self):
+        if self.peek().kind in ("NOT", "BNOT", "!"):
+            self.consume(self.peek().kind)
+            sub = self.parse_not_condition()
+            return ("LOGICAL_NOT", sub)
+        return self.parse_rel_condition()
+
+    def parse_rel_condition(self):
+        if self.peek().kind == "(":
+            saved_pos = self.pos
+            try:
+                self.consume("(")
+                sub = self.parse_or_condition()
+                self.consume(")")
+                cmp_tokens = ("GRT", "LSS", "SM", "EQ", "==", "!=", ">", "<", ">=", "<=")
+                if self.peek().kind not in cmp_tokens:
+                    return sub
+            except Exception:
+                pass
+            self.pos = saved_pos
+
         left = self.parse_atom()
         cmp_tokens = ("GRT", "LSS", "SM", "EQ", "==", "!=", ">", "<", ">=", "<=")
         if self.peek().kind in cmp_tokens:
@@ -1629,7 +1881,45 @@ class Parser:
         self.consume("ADD_VAR")
         name = self.consume_name_or_str()
         self.known_variables.add(name)
+        if self.peek().kind in (":", "EQ", "="):
+            self.consume(self.peek().kind)
+            init_expr = self.parse_expr()
+            return ("ASSIGN_TARGET", ("VAR_TARGET", name), init_expr, tok.line)
         return ("ADD_VAR", name, tok.line)
+
+    def _parse_call(self, tok):
+        self.consume("CALL")
+        name_tok = self.consume()
+        if name_tok.kind != "NAME":
+            raise TrappyError(f"Expected function name after 'call', got '{name_tok.val}'", tok.line)
+        name = name_tok.val
+        while self.peek().kind == ".":
+            self.consume(".")
+            prop = self.consume("NAME").val
+            name = f"{name}.{prop}"
+
+        args = []
+        if self.peek().kind == "(":
+            self.consume("(")
+            if self.peek().kind != ")":
+                args.append(self.parse_expr())
+                while self.peek().kind in (":", ","):
+                    self.consume(self.peek().kind)
+                    args.append(self.parse_expr())
+            self.consume(")")
+        else:
+            while self.peek().kind not in ("TIT", "EQ", "=", "TREN", "EOF") and self.peek().kind in (
+                "NUM", "STR", "NAME", "[", "{", "(", "TXTF", "BOOL"
+            ):
+                args.append(self.parse_atom())
+                if self.peek().kind in (":", ","):
+                    self.consume(self.peek().kind)
+
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume(self.peek().kind)
+            dest = self.parse_target_lvalue()
+            return ("ASSIGN_TARGET", dest, ("CALL", name, args, tok.line), tok.line)
+        return ("CALL", name, args, tok.line)
 
     def _parse_add_func(self, tok):
         self.consume("ADD_FUNC")
@@ -2200,6 +2490,7 @@ class Parser:
                 self.consume("TREN")
                 return ("KEY_CHECK", key_name, is_flkey, body, tok.line)
 
+        branches = []
         condition = self.parse_condition()
 
         if self.peek().kind == "THEN":
@@ -2209,7 +2500,7 @@ class Parser:
         else_body = []
         has_else = False
 
-        while self.peek().kind not in ("ELSE", "TREN", "EOF"):
+        while self.peek().kind not in ("EFR", "ELSE", "TREN", "EOF"):
             if self.peek().kind == "THEN":
                 self.consume("THEN")
                 has_else = True
@@ -2218,14 +2509,28 @@ class Parser:
                 break
             then_body.append(self.parse_statement())
 
-        if self.peek().kind == "ELSE":
+        branches.append((condition, then_body))
+
+        while self.peek().kind == "EFR":
+            self.consume("EFR")
+            efr_cond = self.parse_condition()
+            if self.peek().kind == "THEN":
+                self.consume("THEN")
+            efr_body = []
+            while self.peek().kind not in ("EFR", "ELSE", "TREN", "EOF"):
+                efr_body.append(self.parse_statement())
+            branches.append((efr_cond, efr_body))
+
+        if not has_else and self.peek().kind == "ELSE":
             self.consume("ELSE")
             has_else = True
             while self.peek().kind not in ("TREN", "EOF"):
                 else_body.append(self.parse_statement())
 
         self.consume("TREN")
-        return ("IF_STMT", condition, then_body, else_body if has_else else None, tok.line)
+        if len(branches) == 1:
+            return ("IF_STMT", branches[0][0], branches[0][1], else_body if has_else else None, tok.line)
+        return ("IF_MULTI_STMT", branches, else_body if has_else else None, tok.line)
 
     def _parse_rep(self, tok):
         self.consume("REP")
@@ -2505,10 +2810,311 @@ class Parser:
         self.consume("TREN")
         return ("TRY_CATCH", try_body, err_var, catch_body, tok.line)
 
+    def _parse_rt(self, tok):
+        self.consume("RT")
+        prompt_e = None
+        if self.pos + 1 < len(self.tokens) and self.tokens[self.pos + 1].kind in ("TIT", "EQ", "="):
+            prompt_e = self.parse_atom()
+            self.consume_tit_or_eq()
+        target = self.parse_target_lvalue()
+        return ("READ_INPUT", prompt_e, target, tok.line)
+
+    def _parse_answ(self, tok):
+        self.consume("ANSW")
+        if self.pos + 1 < len(self.tokens) and self.tokens[self.pos + 1].kind in ("TIT", "EQ", "="):
+            prompt_e = self.parse_atom()
+            self.consume_tit_or_eq()
+            target = self.parse_target_lvalue()
+            return ("READ_INPUT", prompt_e, target, tok.line)
+        expr = self.parse_expr()
+        return ("RETURN", expr, tok.line)
+
     def _parse_return(self, tok):
         self.consume("RETURN")
         expr = self.parse_expr()
         return ("RETURN", expr, tok.line)
+
+    def _parse_loadpk(self, tok):
+        self.consume("LOADPK")
+        pkg_expr = self.parse_expr()
+        target = None
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume(self.peek().kind)
+            target = self.consume("NAME").val
+        return ("LOADPK", pkg_expr, target, tok.line)
+
+    def _parse_brch(self, tok):
+        self.consume("BRCH")
+        val_expr = self.parse_expr()
+        cases = []
+        default_body = None
+        while self.peek().kind not in ("OTHR", "ELSE", "TREN", "EOF"):
+            if self.peek().kind == "CAS":
+                self.consume("CAS")
+                case_expr = self.parse_expr()
+                if self.peek().kind == "THEN":
+                    self.consume("THEN")
+                body = []
+                while self.peek().kind not in ("CAS", "OTHR", "ELSE", "TREN", "EOF"):
+                    body.append(self.parse_statement())
+                cases.append((case_expr, body))
+            else:
+                break
+        if self.peek().kind in ("OTHR", "ELSE"):
+            self.consume(self.peek().kind)
+            default_body = []
+            while self.peek().kind not in ("TREN", "EOF"):
+                default_body.append(self.parse_statement())
+        self.consume("TREN")
+        return ("BRANCH_STMT", val_expr, cases, default_body, tok.line)
+
+    def _parse_txtf(self, tok):
+        self.consume("TXTF")
+        has_paren = False
+        if self.peek().kind == "(":
+            self.consume("(")
+            has_paren = True
+        fmt_expr = self.parse_expr()
+        if has_paren:
+            self.consume(")")
+        target = None
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume(self.peek().kind)
+            target = self.parse_target_lvalue()
+        return ("TXTF_STMT", fmt_expr, target, tok.line)
+
+    def _parse_cam3d(self, tok):
+        self.consume("CAM3D")
+        ex = self.parse_coord_part(); self.consume(":"); ey = self.parse_coord_part(); self.consume(":"); ez = self.parse_coord_part()
+        tx = self.parse_coord_part(); self.consume(":"); ty = self.parse_coord_part(); self.consume(":"); tz = self.parse_coord_part()
+        fov = self.parse_coord_part()
+        return ("CAM3D", (ex, ey, ez), (tx, ty, tz), fov, tok.line)
+
+    def _parse_poly3d(self, tok):
+        self.consume("POLY3D")
+        vertices_expr = self.parse_expr()
+        color = self.parse_color()
+        return ("POLY3D", vertices_expr, color, tok.line)
+
+    def _parse_tilemap_init(self, tok):
+        self.consume("TILEMAP_INIT")
+        id_expr = self.parse_expr()
+        sx = self.parse_coord_part(); self.consume(":"); sy = self.parse_coord_part()
+        tw = self.parse_coord_part(); self.consume(":"); th = self.parse_coord_part()
+        tileset_expr = ("STR", "")
+        if self.peek().kind in ("STR", "NAME"):
+            tileset_expr = self.parse_expr()
+        return ("TILEMAP_INIT", id_expr, (sx, sy), (tw, th), tileset_expr, tok.line)
+
+    def _parse_tilemap_draw(self, tok):
+        self.consume("TILEMAP_DRAW")
+        id_expr = self.parse_expr()
+        cx = self.parse_coord_part(); self.consume(":"); cy = self.parse_coord_part()
+        vw = self.parse_coord_part(); self.consume(":"); vh = self.parse_coord_part()
+        return ("TILEMAP_DRAW", id_expr, (cx, cy), (vw, vh), tok.line)
+
+    def _parse_particle_emitter(self, tok):
+        self.consume("PARTICLE_EMITTER")
+        id_expr = self.parse_expr()
+        x = self.parse_coord_part(); self.consume(":"); y = self.parse_coord_part()
+        count = self.parse_coord_part()
+        color = self.parse_color()
+        vx = self.parse_coord_part()
+        vy = self.parse_coord_part()
+        life = self.parse_coord_part()
+        return ("PARTICLE_EMITTER", id_expr, (x, y), count, color, vx, vy, life, tok.line)
+
+    def _parse_synth_adsr(self, tok):
+        self.consume("SYNTH_ADSR")
+        wf = self.parse_expr()
+        freq = self.parse_coord_part()
+        dur = self.parse_coord_part()
+        att = self.parse_coord_part()
+        dec = self.parse_coord_part()
+        sus = self.parse_coord_part()
+        rel = self.parse_coord_part()
+        return ("SYNTH_ADSR", wf, freq, dur, att, dec, sus, rel, tok.line)
+
+    def _parse_sys_clipboard_set(self, tok):
+        self.consume("SYS_CLIPBOARD_SET")
+        text_expr = self.parse_expr()
+        return ("SYS_CLIPBOARD_SET", text_expr, tok.line)
+
+    def _parse_sys_clipboard_get(self, tok):
+        self.consume("SYS_CLIPBOARD_GET")
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume(self.peek().kind)
+        target = self.parse_target_lvalue()
+        return ("SYS_CLIPBOARD_GET", target, tok.line)
+
+    def _parse_sys_dialog_open(self, tok):
+        self.consume("SYS_DIALOG_OPEN")
+        title_e = self.parse_expr()
+        filter_e = self.parse_expr()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume(self.peek().kind)
+        target = self.parse_target_lvalue()
+        return ("SYS_DIALOG_OPEN", title_e, filter_e, target, tok.line)
+
+    def _parse_sys_dialog_save(self, tok):
+        self.consume("SYS_DIALOG_SAVE")
+        title_e = self.parse_expr()
+        filter_e = self.parse_expr()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume(self.peek().kind)
+        target = self.parse_target_lvalue()
+        return ("SYS_DIALOG_SAVE", title_e, filter_e, target, tok.line)
+
+    def _parse_ui_container(self, tok):
+        self.consume("UI_CONTAINER")
+        id_e = self.parse_expr()
+        orient_e = self.parse_expr()
+        x = self.parse_coord_part(); self.consume(":"); y = self.parse_coord_part()
+        w = self.parse_coord_part(); self.consume(":"); h = self.parse_coord_part()
+        body = []
+        while self.peek().kind not in ("TREN", "EOF"):
+            body.append(self.parse_statement())
+        self.consume("TREN")
+        return ("UI_CONTAINER", id_e, orient_e, (x, y), (w, h), body, tok.line)
+
+    def _parse_ui_tabs(self, tok):
+        self.consume("UI_TABS")
+        tabs_e = self.parse_expr()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume(self.peek().kind)
+        target = self.parse_target_lvalue()
+        return ("UI_TABS", tabs_e, target, tok.line)
+
+    def _parse_ai_conv2d(self, tok):
+        self.consume("AI_CONV2D")
+        mat_e = self.parse_atom()
+        if self.peek().kind == ":":
+            self.consume(":")
+        kern_e = self.parse_atom()
+        stride_e = ("NUM", 1)
+        if self.peek().kind == ":":
+            self.consume(":")
+            stride_e = self.parse_atom()
+        elif self.peek().kind not in ("TIT", "EQ", "=") and self.peek().kind in ("NUM", "NAME"):
+            stride_e = self.parse_atom()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume(self.peek().kind)
+        target = self.parse_target_lvalue()
+        return ("AI_CONV2D", mat_e, kern_e, stride_e, target, tok.line)
+
+    def _parse_ai_pool2d(self, tok):
+        self.consume("AI_POOL2D")
+        mat_e = self.parse_atom()
+        pool_e = ("NUM", 2)
+        if self.peek().kind == ":":
+            self.consume(":")
+            pool_e = self.parse_atom()
+        elif self.peek().kind not in ("TIT", "EQ", "=") and self.peek().kind in ("NUM", "NAME"):
+            pool_e = self.parse_atom()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume(self.peek().kind)
+        target = self.parse_target_lvalue()
+        return ("AI_POOL2D", mat_e, pool_e, target, tok.line)
+
+    def _parse_ai_gru_new(self, tok):
+        self.consume("AI_GRU_NEW")
+        id_e = self.parse_expr()
+        in_size = self.parse_expr()
+        hid_size = self.parse_expr()
+        return ("AI_GRU_NEW", id_e, in_size, hid_size, tok.line)
+
+    def _parse_ai_gru_step(self, tok):
+        self.consume("AI_GRU_STEP")
+        id_e = self.parse_expr()
+        in_vec = self.parse_expr()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume(self.peek().kind)
+        target = self.parse_target_lvalue()
+        return ("AI_GRU_STEP", id_e, in_vec, target, tok.line)
+
+    def _parse_ai_audio_fft(self, tok):
+        self.consume("AI_AUDIO_FFT")
+        src_e = self.parse_expr()
+        bands_e = self.parse_expr()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume(self.peek().kind)
+        target = self.parse_target_lvalue()
+        return ("AI_AUDIO_FFT", src_e, bands_e, target, tok.line)
+
+    def _parse_ai_ga_init(self, tok):
+        self.consume("AI_GA_INIT")
+        id_e = self.parse_expr()
+        pop_size = self.parse_expr()
+        layers_e = self.parse_expr()
+        return ("AI_GA_INIT", id_e, pop_size, layers_e, tok.line)
+
+    def _parse_ai_ga_score(self, tok):
+        self.consume("AI_GA_SCORE")
+        id_e = self.parse_expr()
+        bot_id = self.parse_expr()
+        score_e = self.parse_expr()
+        return ("AI_GA_SCORE", id_e, bot_id, score_e, tok.line)
+
+    def _parse_ai_ga_reproduce(self, tok):
+        self.consume("AI_GA_REPRODUCE")
+        id_e = self.parse_expr()
+        mut_e = self.parse_expr()
+        elite_e = self.parse_expr()
+        return ("AI_GA_REPRODUCE", id_e, mut_e, elite_e, tok.line)
+
+    def _parse_os_mmu_page_alloc(self, tok):
+        self.consume("OS_MMU_PAGE_ALLOC")
+        pid_e = self.parse_expr()
+        vaddr_e = self.parse_expr()
+        size_e = self.parse_expr()
+        perms_e = self.parse_expr()
+        return ("OS_MMU_PAGE_ALLOC", pid_e, vaddr_e, size_e, perms_e, tok.line)
+
+    def _parse_os_mmu_protect(self, tok):
+        self.consume("OS_MMU_PROTECT")
+        pid_e = self.parse_expr()
+        vaddr_e = self.parse_expr()
+        perms_e = self.parse_expr()
+        return ("OS_MMU_PROTECT", pid_e, vaddr_e, perms_e, tok.line)
+
+    def _parse_os_pipe(self, tok):
+        self.consume("OS_PIPE")
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume(self.peek().kind)
+        r_target = self.consume("NAME").val
+        self.consume(":")
+        w_target = self.consume("NAME").val
+        return ("OS_PIPE", r_target, w_target, tok.line)
+
+    def _parse_os_redirect_stdout(self, tok):
+        self.consume("OS_REDIRECT_STDOUT")
+        pid_e = self.parse_expr()
+        fd_e = self.parse_expr()
+        return ("OS_REDIRECT_STDOUT", pid_e, fd_e, tok.line)
+
+    def _parse_os_redirect_stdin(self, tok):
+        self.consume("OS_REDIRECT_STDIN")
+        pid_e = self.parse_expr()
+        fd_e = self.parse_expr()
+        return ("OS_REDIRECT_STDIN", pid_e, fd_e, tok.line)
+
+    def _parse_os_driver_register(self, tok):
+        self.consume("OS_DRIVER_REGISTER")
+        name_e = self.parse_expr()
+        ring_e = self.parse_expr()
+        if self.peek().kind in ("TIT", "EQ", "="):
+            self.consume(self.peek().kind)
+        target = self.parse_target_lvalue()
+        return ("OS_DRIVER_REGISTER", name_e, ring_e, target, tok.line)
+
+    def _parse_os_driver_hook(self, tok):
+        self.consume("OS_DRIVER_HOOK")
+        handle_e = self.parse_atom()
+        if self.peek().kind == ":":
+            self.consume(":")
+        syscall_e = self.parse_atom()
+        cb_e = self.parse_atom()
+        return ("OS_DRIVER_HOOK", handle_e, syscall_e, cb_e, tok.line)
 
     def _parse_os_boot(self, tok):
         self.consume("OS_BOOT")
@@ -3217,36 +3823,65 @@ class Parser:
 
         if tok.kind == "NAME":
             name = self.consume("NAME").val
-            if name in self.known_functions:
-                args = []
-                if self.peek().kind in ("NUM", "STR", "NAME", "("):
-                    args.append(self.parse_atom())
-                    while self.peek().kind == ":":
-                        self.consume(":")
+
+            # 1. Check if name is part of an lvalue target or chain (.prop, [idx])
+            if self.peek().kind in (".", "["):
+                self.pos -= 1
+                dest = self.parse_target_lvalue()
+                if self.peek().kind in ("EQ", "=", "TIT"):
+                    self.consume(self.peek().kind)
+                    expr = self.parse_expr()
+                    return ("ASSIGN_TARGET", dest, expr, tok.line)
+                # Check for method / namespaced call: obj.func(...) or obj.func a:b
+                if self.peek().kind in ("NUM", "STR", "NAME", "(", ":", ","):
+                    call_name = dest[1] if dest[0] == "VAR_TARGET" else f"{dest[1]}.{dest[2]}" if dest[0] == "DOT_TARGET" else name
+                    args = []
+                    if self.peek().kind == "(":
+                        self.consume("(")
+                        if self.peek().kind != ")":
+                            args.append(self.parse_expr())
+                            while self.peek().kind in (":", ","):
+                                self.consume(self.peek().kind)
+                                args.append(self.parse_expr())
+                        self.consume(")")
+                    else:
                         args.append(self.parse_atom())
+                        while self.peek().kind in (":", ","):
+                            self.consume(self.peek().kind)
+                            args.append(self.parse_atom())
+                    if self.peek().kind in ("TIT", "EQ", "="):
+                        self.consume(self.peek().kind)
+                        call_dest = self.parse_target_lvalue()
+                        return ("ASSIGN_TARGET", call_dest, ("CALL", call_name, args, tok.line), tok.line)
+                    return ("CALL", call_name, args, tok.line)
+
+            if self.peek().kind in ("EQ", "="):
+                self.consume(self.peek().kind)
+                expr = self.parse_expr()
+                return ("ASSIGN_TARGET", ("VAR_TARGET", name), expr, tok.line)
+
+            if self.peek().kind == "(":
+                self.consume("(")
+                args = []
+                if self.peek().kind != ")":
+                    args.append(self.parse_expr())
+                    while self.peek().kind in (":", ","):
+                        self.consume(self.peek().kind)
+                        args.append(self.parse_expr())
+                self.consume(")")
                 if self.peek().kind in ("TIT", "EQ", "="):
                     self.consume(self.peek().kind)
                     dest = self.parse_target_lvalue()
                     return ("ASSIGN_TARGET", dest, ("CALL", name, args, tok.line), tok.line)
                 return ("CALL", name, args, tok.line)
 
-            if self.peek().kind == ".":
-                self.consume(".")
-                prop = self.consume("NAME").val
-                self.consume("EQ")
-                expr = self.parse_expr()
-                return ("ASSIGN_TARGET", ("DOT_TARGET", name, prop), expr, tok.line)
-
-            if self.peek().kind == "EQ":
-                self.consume("EQ")
-                expr = self.parse_expr()
-                return ("ASSIGN_TARGET", ("VAR_TARGET", name), expr, tok.line)
-
-            if self.peek().kind in ("NUM", "STR", "NAME", "("):
-                args = [self.parse_atom()]
-                while self.peek().kind == ":":
-                    self.consume(":")
+            if name in self.known_functions or self.peek().kind in ("NUM", "STR", "NAME"):
+                args = []
+                if self.peek().kind in ("NUM", "STR", "NAME"):
                     args.append(self.parse_atom())
+                    while self.peek().kind in (":", ","):
+                        self.consume(self.peek().kind)
+                        args.append(self.parse_atom())
                 if self.peek().kind in ("TIT", "EQ", "="):
                     self.consume(self.peek().kind)
                     dest = self.parse_target_lvalue()
@@ -3273,11 +3908,23 @@ class Parser:
 
     def parse_target_lvalue(self):
         name = self.consume("NAME").val
-        if self.peek().kind == ".":
-            self.consume(".")
-            prop = self.consume("NAME").val
-            return ("DOT_TARGET", name, prop)
-        return ("VAR_TARGET", name)
+        chain = []
+        while self.peek().kind in (".", "["):
+            if self.peek().kind == ".":
+                self.consume(".")
+                prop = self.consume("NAME").val
+                chain.append(("DOT", prop))
+            elif self.peek().kind == "[":
+                self.consume("[")
+                idx_expr = self.parse_expr()
+                self.consume("]")
+                chain.append(("INDEX", idx_expr))
+        if not chain:
+            return ("VAR_TARGET", name)
+        elif len(chain) == 1 and chain[0][0] == "DOT":
+            return ("DOT_TARGET", name, chain[0][1])
+        else:
+            return ("CHAIN_TARGET", name, chain)
 
     def parse_coord_part(self):
         tok = self.peek()
@@ -3379,6 +4026,27 @@ class Parser:
             node = ("BINOP", op, node, right)
         return node
 
+    def _parse_postfix_chain(self, node, line):
+        while self.peek().kind in ("[", "."):
+            if self.peek().kind == "[":
+                saved_pos = self.pos
+                try:
+                    self.consume("[")
+                    idx_expr = self.parse_expr()
+                    if self.peek().kind == "]":
+                        self.consume("]")
+                        node = ("INDEX_GET", node, idx_expr, line)
+                        continue
+                except Exception:
+                    pass
+                self.pos = saved_pos
+                break
+            elif self.peek().kind == ".":
+                self.consume(".")
+                prop = self.consume("NAME").val
+                node = ("DOT_GET", node, prop, line)
+        return node
+
     def parse_factor(self):
         tok = self.peek()
 
@@ -3393,7 +4061,59 @@ class Parser:
                         break
                     items.append(self.parse_expr())
             self.consume("]")
-            return ("LIST_LITERAL", items, tok.line)
+            return self._parse_postfix_chain(("LIST_LITERAL", items, tok.line), tok.line)
+
+        if tok.kind == "{":
+            self.consume("{")
+            pairs = []
+            while self.peek().kind not in ("}", "EOF"):
+                if self.peek().kind in ("NAME", "STR") and self.pos + 1 < len(self.tokens) and self.tokens[self.pos + 1].kind == ":":
+                    k_node = ("STR", self.consume(self.peek().kind).val)
+                else:
+                    k_node = self.parse_expr()
+                self.consume(":")
+                v_node = self.parse_expr()
+                pairs.append((k_node, v_node))
+                if self.peek().kind in (",", ";"):
+                    self.consume(self.peek().kind)
+            self.consume("}")
+            return self._parse_postfix_chain(("DICT_LITERAL", pairs, tok.line), tok.line)
+
+        if tok.kind == "CALL":
+            self.consume("CALL")
+            fn_tok = self.consume()
+            fn_name = fn_tok.val
+            while self.peek().kind == ".":
+                self.consume(".")
+                fn_name = f"{fn_name}.{self.consume('NAME').val}"
+            args = []
+            if self.peek().kind == "(":
+                self.consume("(")
+                if self.peek().kind != ")":
+                    args.append(self.parse_expr())
+                    while self.peek().kind in (":", ","):
+                        self.consume(self.peek().kind)
+                        args.append(self.parse_expr())
+                self.consume(")")
+            else:
+                while self.peek().kind in ("NUM", "STR", "NAME", "[", "{", "(", "TXTF", "BOOL"):
+                    args.append(self.parse_atom())
+                    if self.peek().kind in (":", ","):
+                        self.consume(self.peek().kind)
+                    else:
+                        break
+            return self._parse_postfix_chain(("CALL", fn_name, args, tok.line), tok.line)
+
+        if tok.kind == "TXTF":
+            self.consume("TXTF")
+            has_paren = False
+            if self.peek().kind == "(":
+                self.consume("(")
+                has_paren = True
+            fmt_e = self.parse_expr()
+            if has_paren:
+                self.consume(")")
+            return self._parse_postfix_chain(("TXTF_EXPR", fmt_e, tok.line), tok.line)
 
         if tok.kind in ("TO_STR", "TO_NUM", "TO_INT", "TO_FLOAT"):
             op = self.consume(tok.kind).val
@@ -3475,46 +4195,38 @@ class Parser:
             self.consume("STR")
             return ("STR", tok.val)
 
-        if tok.kind == "UI_EASE":
-            self.consume("UI_EASE")
-            has_paren = False
-            if self.peek().kind == "(":
-                self.consume("(")
-                has_paren = True
-            start_e = self.parse_atom()
-            self.consume(":")
-            end_e = self.parse_atom()
-            self.consume(":")
-            t_e = self.parse_atom()
-            style_e = ("STR", "linear")
-            if self.peek().kind == ":":
-                self.consume(":")
-                style_e = self.parse_atom()
-            if has_paren:
-                self.consume(")")
-            return ("UI_EASE_EXPR", start_e, end_e, t_e, style_e, tok.line)
-
         if tok.kind == "(":
             self.consume("(")
             node = self.parse_expr()
             self.consume(")")
-            return node
+            return self._parse_postfix_chain(node, tok.line)
 
         if tok.kind == "NAME":
             name = self.consume("NAME").val
             if self.peek().kind == ".":
                 self.consume(".")
                 prop = self.consume("NAME").val
-                return ("DOT", name, prop, tok.line)
+                return self._parse_postfix_chain(("DOT", name, prop, tok.line), tok.line)
+
+            if self.peek().kind == "(":
+                self.consume("(")
+                args = []
+                if self.peek().kind != ")":
+                    args.append(self.parse_expr())
+                    while self.peek().kind in (":", ","):
+                        self.consume(self.peek().kind)
+                        args.append(self.parse_expr())
+                self.consume(")")
+                return self._parse_postfix_chain(("CALL", name, args, tok.line), tok.line)
 
             if name in self.known_functions and self.peek().kind in ("NUM", "STR", "NAME", "("):
                 args = [self.parse_atom()]
-                while self.peek().kind == ":":
-                    self.consume(":")
+                while self.peek().kind in (":", ","):
+                    self.consume(self.peek().kind)
                     args.append(self.parse_atom())
-                return ("CALL", name, args, tok.line)
+                return self._parse_postfix_chain(("CALL", name, args, tok.line), tok.line)
 
-            return ("VAR", name, tok.line)
+            return self._parse_postfix_chain(("VAR", name, tok.line), tok.line)
 
         raise TrappyError(f"Invalid item in expression '{tok.val}'", tok.line)
 
@@ -3531,7 +4243,57 @@ class Parser:
                         break
                     items.append(self.parse_expr())
             self.consume("]")
-            return ("LIST_LITERAL", items, tok.line)
+            return self._parse_postfix_chain(("LIST_LITERAL", items, tok.line), tok.line)
+        if tok.kind == "{":
+            self.consume("{")
+            pairs = []
+            while self.peek().kind not in ("}", "EOF"):
+                if self.peek().kind in ("NAME", "STR") and self.pos + 1 < len(self.tokens) and self.tokens[self.pos + 1].kind == ":":
+                    k_node = ("STR", self.consume(self.peek().kind).val)
+                else:
+                    k_node = self.parse_expr()
+                self.consume(":")
+                v_node = self.parse_expr()
+                pairs.append((k_node, v_node))
+                if self.peek().kind in (",", ";"):
+                    self.consume(self.peek().kind)
+            self.consume("}")
+            return self._parse_postfix_chain(("DICT_LITERAL", pairs, tok.line), tok.line)
+        if tok.kind == "CALL":
+            self.consume("CALL")
+            fn_tok = self.consume()
+            fn_name = fn_tok.val
+            while self.peek().kind == ".":
+                self.consume(".")
+                fn_name = f"{fn_name}.{self.consume('NAME').val}"
+            args = []
+            if self.peek().kind == "(":
+                self.consume("(")
+                if self.peek().kind != ")":
+                    args.append(self.parse_expr())
+                    while self.peek().kind in (":", ","):
+                        self.consume(self.peek().kind)
+                        args.append(self.parse_expr())
+                self.consume(")")
+            else:
+                while self.peek().kind in ("NUM", "STR", "NAME", "[", "{", "(", "TXTF", "BOOL"):
+                    args.append(self.parse_atom())
+                    if self.peek().kind in (":", ","):
+                        self.consume(self.peek().kind)
+                    else:
+                        break
+            return self._parse_postfix_chain(("CALL", fn_name, args, tok.line), tok.line)
+
+        if tok.kind == "TXTF":
+            self.consume("TXTF")
+            has_paren = False
+            if self.peek().kind == "(":
+                self.consume("(")
+                has_paren = True
+            fmt_e = self.parse_expr()
+            if has_paren:
+                self.consume(")")
+            return self._parse_postfix_chain(("TXTF_EXPR", fmt_e, tok.line), tok.line)
         if tok.kind == "NUM":
             self.consume("NUM")
             return ("NUM", tok.val)
@@ -3549,18 +4311,18 @@ class Parser:
             if self.peek().kind == ".":
                 self.consume(".")
                 prop = self.consume("NAME").val
-                return ("DOT", name, prop, tok.line)
+                return self._parse_postfix_chain(("DOT", name, prop, tok.line), tok.line)
             if self.peek().kind == "(":
                 self.consume("(")
                 args = []
                 if self.peek().kind != ")":
                     args.append(self.parse_expr())
-                    while self.peek().kind == ":":
-                        self.consume(":")
+                    while self.peek().kind in (":", ","):
+                        self.consume(self.peek().kind)
                         args.append(self.parse_expr())
                 self.consume(")")
-                return ("CALL", name, args, tok.line)
-            return ("VAR", name, tok.line)
+                return self._parse_postfix_chain(("CALL", name, args, tok.line), tok.line)
+            return self._parse_postfix_chain(("VAR", name, tok.line), tok.line)
         if tok.kind == "UI_EASE":
             self.consume("UI_EASE")
             has_paren = False
@@ -3584,7 +4346,7 @@ class Parser:
             self.consume("(")
             node = self.parse_expr()
             self.consume(")")
-            return node
+            return self._parse_postfix_chain(node, tok.line)
         raise TrappyError(f"Expected argument, got '{tok.val}'", tok.line)
 
 class Environment:
@@ -3599,17 +4361,19 @@ class Environment:
             self.vars[name] = 0
 
     def has(self, name):
-        if name in self.vars:
-            return True
-        if self.parent:
-            return self.parent.has(name)
+        curr = self
+        while curr is not None:
+            if name in curr.vars:
+                return True
+            curr = curr.parent
         return False
 
     def get(self, name, line=None):
-        if name in self.vars:
-            return self.vars[name]
-        if self.parent:
-            return self.parent.get(name, line)
+        curr = self
+        while curr is not None:
+            if name in curr.vars:
+                return curr.vars[name]
+            curr = curr.parent
         raise TrappyError(f"'{name}' was wiped out or never created!", line)
 
     def set(self, name, val):
@@ -3805,7 +4569,19 @@ class TrappyInterpreter:
         self.target_fps = 60
         self.game_loop_body = None
         self.call_depth = 0
-        self.MAX_CALL_DEPTH = 100
+        self.call_stack_depth = 0
+        self.MAX_CALL_DEPTH = 500
+        self.max_call_stack_depth = 500
+        self.loaded_packages = {}
+        self.camera_3d = {"eye": [0, 200, 500], "target": [0, 0, 0], "fov": 60}
+        self.poly3d_buffer = []
+        self.tilemaps = {}
+        self.particle_systems = {}
+        self.last_synth_adsr = None
+        self.clipboard_data = ""
+        self.ui_containers = {}
+        self.gru_models = {}
+        self.ga_populations = {}
         self.os_kernel = TrappyOSKernel(self)
 
         self._eval_dispatch = {
@@ -3818,6 +4594,7 @@ class TrappyInterpreter:
             "TRG_ACTION": self._eval_trg_action,
             "CALL": self._eval_call,
             "RETURN": self._eval_return,
+            "READ_INPUT": self._eval_read_input,
             "ADD_VAR": self._eval_add_var,
             "ADD_FUNC": self._eval_add_func,
             "ADD_OBJ": self._eval_add_obj,
@@ -3993,13 +4770,45 @@ class TrappyInterpreter:
             "AI_UI_AGENT": self._eval_ai_ui_agent,
             "AI_UI_CHAT": self._eval_ai_ui_chat,
             "OS_AI_ANOMALY_CHECK": self._eval_os_ai_anomaly_check,
-            "OS_AI_ASSISTANT": self._eval_os_ai_assistant
+            "OS_AI_ASSISTANT": self._eval_os_ai_assistant,
+            "IF_MULTI_STMT": self._eval_if_multi,
+            "BRANCH_STMT": self._eval_branch,
+            "LOADPK": self._eval_loadpk,
+            "TXTF_STMT": self._eval_txtf_stmt,
+            "CAM3D": self._eval_cam3d,
+            "POLY3D": self._eval_poly3d,
+            "TILEMAP_INIT": self._eval_tilemap_init,
+            "TILEMAP_DRAW": self._eval_tilemap_draw,
+            "PARTICLE_EMITTER": self._eval_particle_emitter,
+            "SYNTH_ADSR": self._eval_synth_adsr,
+            "SYS_CLIPBOARD_SET": self._eval_sys_clipboard_set,
+            "SYS_CLIPBOARD_GET": self._eval_sys_clipboard_get,
+            "SYS_DIALOG_OPEN": self._eval_sys_dialog_open,
+            "SYS_DIALOG_SAVE": self._eval_sys_dialog_save,
+            "UI_CONTAINER": self._eval_ui_container,
+            "UI_TABS": self._eval_ui_tabs,
+            "AI_CONV2D": self._eval_ai_conv2d,
+            "AI_POOL2D": self._eval_ai_pool2d,
+            "AI_GRU_NEW": self._eval_ai_gru_new,
+            "AI_GRU_STEP": self._eval_ai_gru_step,
+            "AI_AUDIO_FFT": self._eval_ai_audio_fft,
+            "AI_GA_INIT": self._eval_ai_ga_init,
+            "AI_GA_SCORE": self._eval_ai_ga_score,
+            "AI_GA_REPRODUCE": self._eval_ai_ga_reproduce,
+            "OS_MMU_PAGE_ALLOC": self._eval_os_mmu_page_alloc,
+            "OS_MMU_PROTECT": self._eval_os_mmu_protect,
+            "OS_PIPE": self._eval_os_pipe,
+            "OS_REDIRECT_STDOUT": self._eval_os_redirect_stdout,
+            "OS_REDIRECT_STDIN": self._eval_os_redirect_stdin,
+            "OS_DRIVER_REGISTER": self._eval_os_driver_register,
+            "OS_DRIVER_HOOK": self._eval_os_driver_hook
         }
 
-    def run(self, ast):
+    def run(self, ast, env=None):
+        target_env = env if env is not None else self.global_env
         if ast[0] == "PROGRAM":
             for stmt in ast[1]:
-                self.eval_stmt(stmt, self.global_env)
+                self.eval_stmt(stmt, target_env)
 
             if self.gui and self.gui.root:
                 if self.game_loop_body:
@@ -4032,30 +4841,68 @@ class TrappyInterpreter:
         elif target[0] == "DOT_TARGET":
             _, obj_name, prop_name = target
             env.set_dot(obj_name, prop_name, val, line)
+        elif target[0] == "CHAIN_TARGET":
+            _, root_name, chain = target
+            curr = env.get(root_name, line)
+            for step in chain[:-1]:
+                if step[0] == "DOT":
+                    prop = step[1]
+                    if isinstance(curr, dict) and prop in curr:
+                        curr = curr[prop]
+                    else:
+                        raise TrappyError(f"Object has no property '{prop}'", line)
+                elif step[0] == "INDEX":
+                    idx = self.eval_expr(step[1], env)
+                    try:
+                        curr = curr[idx]
+                    except Exception as e:
+                        raise TrappyError(f"Index error on chain navigation: {e}", line)
+            last = chain[-1]
+            if last[0] == "DOT":
+                prop = last[1]
+                if isinstance(curr, dict):
+                    curr[prop] = val
+                else:
+                    raise TrappyError(f"Cannot set property '{prop}' on non-dict", line)
+            elif last[0] == "INDEX":
+                idx = self.eval_expr(last[1], env)
+                try:
+                    curr[idx] = val
+                except Exception as e:
+                    raise TrappyError(f"Index assignment error: {e}", line)
 
     def _eval_cond_bool(self, condition, env):
-        _, op, left_expr, right_expr = condition
-        left = self.eval_expr(left_expr, env)
-        right = self.eval_expr(right_expr, env)
-        if left is None and isinstance(right, (int, float)):
-            left = 0
-        if right is None and isinstance(left, (int, float)):
-            right = 0
+        tag = condition[0]
+        if tag == "LOGICAL_OR":
+            return bool(self._eval_cond_bool(condition[1], env) or self._eval_cond_bool(condition[2], env))
+        elif tag == "LOGICAL_AND":
+            return bool(self._eval_cond_bool(condition[1], env) and self._eval_cond_bool(condition[2], env))
+        elif tag == "LOGICAL_NOT":
+            return not bool(self._eval_cond_bool(condition[1], env))
+        elif tag == "COND":
+            _, op, left_expr, right_expr = condition
+            left = self.eval_expr(left_expr, env)
+            right = self.eval_expr(right_expr, env)
+            if left is None and isinstance(right, (int, float)):
+                left = 0
+            if right is None and isinstance(left, (int, float)):
+                right = 0
 
-        op_clean = op.lower() if isinstance(op, str) else op
+            op_clean = op.lower() if isinstance(op, str) else op
 
-        if op_clean in ("grt", ">"):
-            return (left > right)
-        elif op_clean in ("lss", "<"):
-            return (left < right)
-        elif op_clean in ("sm", "eq", "=="):
-            return (left == right)
-        elif op_clean in ("!=", "ne"):
-            return (left != right)
-        elif op_clean in (">=", "gte"):
-            return (left >= right)
-        elif op_clean in ("<=", "lte"):
-            return (left <= right)
+            if op_clean in ("grt", ">"):
+                return (left > right)
+            elif op_clean in ("lss", "<"):
+                return (left < right)
+            elif op_clean in ("sm", "eq", "=="):
+                return (left == right)
+            elif op_clean in ("!=", "ne"):
+                return (left != right)
+            elif op_clean in (">=", "gte"):
+                return (left >= right)
+            elif op_clean in ("<=", "lte"):
+                return (left <= right)
+            return False
         return False
 
     def _eval_slen(self, stmt, env):
@@ -4294,15 +5141,14 @@ class TrappyInterpreter:
     def _eval_assign_target(self, stmt, env):
         _, target, expr, line = stmt
         val = self.eval_expr(expr, env)
-        if target[0] == "VAR_TARGET":
-            env.set(target[1], val)
-        elif target[0] == "DOT_TARGET":
-            _, obj_name, prop_name = target
-            env.set_dot(obj_name, prop_name, val, line)
+        self._set_target(target, val, env, line)
 
     def _eval_assign_list(self, stmt, env):
         _, var_name, items, _ = stmt
-        evaluated_items = [self.eval_expr(it, env) for it in items]
+        if len(items) == 1 and items[0][0] == "LIST_LITERAL":
+            evaluated_items = [self.eval_expr(it, env) for it in items[0][1]]
+        else:
+            evaluated_items = [self.eval_expr(it, env) for it in items]
         env.set(var_name, evaluated_items)
 
     def _eval_fn_def(self, stmt, env):
@@ -4333,6 +5179,16 @@ class TrappyInterpreter:
     def _eval_call(self, stmt, env):
         _, name, args, line = stmt
         self.call_function(name, args, env, line)
+
+    def _eval_read_input(self, stmt, env):
+        _, prompt_e, target, line = stmt
+        prompt_str = str(self.eval_expr(prompt_e, env)) if prompt_e is not None else ""
+        try:
+            val = input(prompt_str)
+        except (EOFError, KeyboardInterrupt):
+            val = "quit"
+        self._set_target(target, val, env, line)
+        return val
 
     def _eval_return(self, stmt, env):
         _, expr, _ = stmt
@@ -4958,21 +5814,33 @@ class TrappyInterpreter:
     def _eval_file_write(self, stmt, env):
         _, file_expr, content_expr, line = stmt
         fname = str(self.eval_expr(file_expr, env))
-        content = str(self.eval_expr(content_expr, env))
+        raw_content = self.eval_expr(content_expr, env)
         safe_name = sanitize_path(fname)
         parent_dir = os.path.dirname(safe_name)
         if parent_dir and not os.path.exists(parent_dir):
             os.makedirs(parent_dir, exist_ok=True)
-        with open(safe_name, "w", encoding="utf-8") as f:
-            f.write(content)
+        if fname.endswith(".trpc") or (isinstance(raw_content, str) and raw_content.startswith("TRPC")):
+            if isinstance(raw_content, bytes):
+                with open(safe_name, "wb") as f:
+                    f.write(raw_content)
+            else:
+                with open(safe_name, "w", encoding="latin1") as f:
+                    f.write(str(raw_content))
+        else:
+            with open(safe_name, "w", encoding="utf-8") as f:
+                f.write(str(raw_content))
 
     def _eval_file_read(self, stmt, env):
         _, file_expr, dest_var, line = stmt
         fname = str(self.eval_expr(file_expr, env))
         safe_name = sanitize_path(fname)
         if os.path.exists(safe_name):
-            with open(safe_name, "r", encoding="utf-8") as f:
-                env.set(dest_var, f.read())
+            if fname.endswith(".trpc"):
+                with open(safe_name, "r", encoding="latin1") as f:
+                    env.set(dest_var, f.read())
+            else:
+                with open(safe_name, "r", encoding="utf-8") as f:
+                    env.set(dest_var, f.read())
         else:
             env.set(dest_var, "")
 
@@ -5164,6 +6032,38 @@ class TrappyInterpreter:
             return expr
 
         kind = expr[0]
+        if kind == "INDEX_GET":
+            _, container_e, idx_e, line = expr
+            container = self.eval_expr(container_e, env)
+            idx = self.eval_expr(idx_e, env)
+            try:
+                return container[idx]
+            except Exception as e:
+                raise TrappyError(f"Index error: {e}", line)
+
+        if kind == "DOT_GET":
+            _, container_e, prop, line = expr
+            container = self.eval_expr(container_e, env)
+            if isinstance(container, dict):
+                if prop in container:
+                    return container[prop]
+                raise TrappyError(f"Object has no property '{prop}'", line)
+            raise TrappyError(f"Cannot access property '{prop}' on non-object", line)
+
+        if kind == "DICT_LITERAL":
+            _, pairs, line = expr
+            d = {}
+            for k_e, v_e in pairs:
+                k = self.eval_expr(k_e, env)
+                v = self.eval_expr(v_e, env)
+                d[k] = v
+            return d
+
+        if kind == "TXTF_EXPR":
+            _, fmt_expr, line = expr
+            template = str(self.eval_expr(fmt_expr, env))
+            return self._format_txtf(template, env, line)
+
         if kind == "LIST_LITERAL":
             return [self.eval_expr(it, env) for it in expr[1]]
         if kind == "NUM":
@@ -5288,26 +6188,61 @@ class TrappyInterpreter:
 
     def call_function(self, fn_name, args, env, line):
         self.call_depth += 1
+        self.call_stack_depth = self.call_depth
         if self.call_depth > self.MAX_CALL_DEPTH:
             self.call_depth = 0
+            self.call_stack_depth = 0
             raise TrappySecurityError(
-                f"Recursion bomb blocked: exceeded maximum stack ceiling ({self.MAX_CALL_DEPTH})!",
+                f"Recursion bomb blocked: exceeded maximum stack ceiling ({self.MAX_CALL_DEPTH})! Call stack overflow.",
                 line
             )
 
-        if fn_name not in self.functions:
-            self.call_depth -= 1
-            raise TrappyError(f"Undefined Trappy function '{fn_name}'", line)
+        closure_env = env
+        if "." in fn_name:
+            obj_name, func_name = fn_name.split(".", 1)
+            obj = env.get(obj_name, line)
+            if isinstance(obj, dict) and func_name in obj:
+                fn_item = obj[func_name]
+                if isinstance(fn_item, tuple) and len(fn_item) == 3:
+                    params, body, closure_env = fn_item
+                else:
+                    params, body = fn_item
+                    if "__env__" in obj:
+                        closure_env = obj["__env__"]
+            else:
+                self.call_depth -= 1
+                self.call_stack_depth = self.call_depth
+                raise TrappyError(f"Package or object '{obj_name}' has no function '{func_name}'", line)
+        else:
+            found = False
+            curr = env
+            while curr is not None:
+                if fn_name in curr.vars and isinstance(curr.vars[fn_name], tuple):
+                    fn_item = curr.vars[fn_name]
+                    if len(fn_item) == 3:
+                        params, body, closure_env = fn_item
+                    else:
+                        params, body = fn_item
+                    found = True
+                    break
+                curr = curr.parent
+            if not found:
+                if fn_name not in self.functions:
+                    self.call_depth -= 1
+                    self.call_stack_depth = self.call_depth
+                    raise TrappyError(f"Undefined Trappy function '{fn_name}'", line)
+                else:
+                    params, body = self.functions[fn_name]
 
-        params, body = self.functions[fn_name]
         if len(args) != len(params):
             self.call_depth -= 1
+            self.call_stack_depth = self.call_depth
             raise TrappyError(
                 f"Function '{fn_name}' expects {len(params)} argument(s), but got {len(args)}",
                 line
             )
 
-        fn_env = Environment(parent=env)
+        fn_env = Environment(parent=closure_env)
         for p_name, arg_expr in zip(params, args):
             val = self.eval_expr(arg_expr, env)
             fn_env.set(p_name, val)
@@ -5320,6 +6255,7 @@ class TrappyInterpreter:
             result = ret.value
         finally:
             self.call_depth -= 1
+            self.call_stack_depth = self.call_depth
 
         return result
 
@@ -5328,6 +6264,650 @@ class TrappyInterpreter:
         name = str(self.eval_expr(name_expr, env))
         ver = str(self.eval_expr(ver_expr, env))
         self.os_kernel.boot(name, ver)
+
+    def _format_txtf(self, template, env, line):
+        def _repl(m):
+            inner = m.group(1).strip()
+            if "." in inner:
+                parts = inner.split(".", 1)
+                try:
+                    obj = env.get(parts[0], line)
+                    if isinstance(obj, dict) and parts[1] in obj:
+                        return str(obj[parts[1]])
+                except Exception:
+                    pass
+            elif env.has(inner):
+                return str(env.get(inner, line))
+            try:
+                sub_toks = tokenize(inner)
+                sub_parser = Parser(sub_toks)
+                sub_ast = sub_parser.parse_expr()
+                return str(self.eval_expr(sub_ast, env))
+            except Exception as e:
+                raise TrappyError(f"txtf format error on '{inner}': {e}", line)
+        return re.sub(r"\{([^}]+)\}", _repl, template)
+
+    def _resolve_package_path(self, pkg_name, line):
+        candidates = [
+            pkg_name,
+            pkg_name + ".trappy",
+            os.path.join(".", pkg_name),
+            os.path.join(".", pkg_name + ".trappy"),
+            os.path.join("packages", pkg_name),
+            os.path.join("packages", pkg_name + ".trappy"),
+            os.path.join("packages", "cache", pkg_name),
+            os.path.join("packages", "cache", pkg_name + ".trappy"),
+        ]
+        trappy_root = os.path.dirname(os.path.abspath(__file__))
+        candidates.extend([
+            os.path.join(trappy_root, "packages", pkg_name),
+            os.path.join(trappy_root, "packages", pkg_name + ".trappy"),
+            os.path.join(trappy_root, "packages", "cache", pkg_name),
+            os.path.join(trappy_root, "packages", "cache", pkg_name + ".trappy"),
+        ])
+        for p in candidates:
+            if os.path.isfile(p):
+                return os.path.abspath(p)
+        raise TrappyError(f"Package '{pkg_name}' not found in search paths", line)
+
+    def _eval_loadpk(self, stmt, env):
+        _, pkg_expr, target, line = stmt
+        pkg_name = str(self.eval_expr(pkg_expr, env))
+        if pkg_name in self.loaded_packages:
+            module_env, sub_interp = self.loaded_packages[pkg_name]
+        else:
+            file_path = self._resolve_package_path(pkg_name, line)
+            with open(file_path, "r", encoding="utf-8") as f:
+                code = f.read()
+            tokens = tokenize(code)
+            parser = Parser(tokens)
+            ast = parser.parse_program()
+            module_env = Environment()
+            sub_interp = TrappyInterpreter(safe_mode=self.safe_mode)
+            sub_interp.run(ast, module_env)
+            self.loaded_packages[pkg_name] = (module_env, sub_interp)
+
+        if target:
+            mod_obj = {}
+            for k, v in module_env.vars.items():
+                mod_obj[k] = v
+            for fn_name, fn_def in sub_interp.functions.items():
+                params, body = fn_def
+                mod_fn = (params, body, module_env)
+                mod_obj[fn_name] = mod_fn
+                module_env.vars[fn_name] = mod_fn
+            mod_obj["__env__"] = module_env
+            env.set(target, mod_obj)
+        else:
+            for k, v in module_env.vars.items():
+                env.set(k, v)
+            for fn_name, fn_def in sub_interp.functions.items():
+                self.functions[fn_name] = fn_def
+
+    def _eval_if_multi(self, stmt, env):
+        _, branches, else_body, line = stmt
+        for cond, body in branches:
+            if self._eval_cond_bool(cond, env):
+                for s in body:
+                    res = self.eval_stmt(s, env)
+                    if res is not None:
+                        return res
+                return
+        if else_body:
+            for s in else_body:
+                res = self.eval_stmt(s, env)
+                if res is not None:
+                    return res
+
+    def _eval_branch(self, stmt, env):
+        _, val_expr, cases, default_body, line = stmt
+        target_val = self.eval_expr(val_expr, env)
+        matched = False
+        for case_expr, body in cases:
+            case_val = self.eval_expr(case_expr, env)
+            if target_val == case_val:
+                matched = True
+                for s in body:
+                    res = self.eval_stmt(s, env)
+                    if res is not None:
+                        return res
+                break
+        if not matched and default_body is not None:
+            for s in default_body:
+                res = self.eval_stmt(s, env)
+                if res is not None:
+                    return res
+
+    def _eval_txtf_stmt(self, stmt, env):
+        _, fmt_expr, target, line = stmt
+        template = str(self.eval_expr(fmt_expr, env))
+        res = self._format_txtf(template, env, line)
+        if target:
+            self._set_target(target, res, env, line)
+        return res
+
+    def _eval_cam3d(self, stmt, env):
+        _, eye_tup, target_tup, fov_e, line = stmt
+        ex = self.eval_coord(eye_tup[0], env)
+        ey = self.eval_coord(eye_tup[1], env)
+        ez = self.eval_coord(eye_tup[2], env)
+        tx = self.eval_coord(target_tup[0], env)
+        ty = self.eval_coord(target_tup[1], env)
+        tz = self.eval_coord(target_tup[2], env)
+        fov = float(self.eval_coord(fov_e, env))
+        self.camera_3d = {
+            "eye": (ex, ey, ez),
+            "target": (tx, ty, tz),
+            "fov": fov
+        }
+
+    def _eval_poly3d(self, stmt, env):
+        _, verts_e, color, line = stmt
+        raw_verts = self.eval_expr(verts_e, env)
+        if not isinstance(raw_verts, (list, tuple)) or len(raw_verts) < 3:
+            raise TrappyError("poly3d requires at least 3 vertices [[x, y, z], ...]", line)
+
+        eye = self.camera_3d.get("eye", (0, 200, 500))
+        target = self.camera_3d.get("target", (0, 0, 0))
+        fov_deg = self.camera_3d.get("fov", 60.0)
+
+        fx, fy, fz = target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]
+        f_len = math.sqrt(fx*fx + fy*fy + fz*fz) or 1.0
+        fx, fy, fz = fx/f_len, fy/f_len, fz/f_len
+
+        rx = fz
+        ry = 0.0
+        rz = -fx
+        r_len = math.sqrt(rx*rx + rz*rz) or 1.0
+        rx, rz = rx/r_len, rz/r_len
+
+        ux = ry * fz - rz * fy
+        uy = rz * fx - rx * fz
+        uz = rx * fy - ry * fx
+
+        screen_w = 800
+        screen_h = 600
+        if self.gui and hasattr(self.gui, "width"):
+            screen_w = self.gui.width
+            screen_h = self.gui.height
+
+        fov_rad = math.radians(fov_deg)
+        focal_len = (screen_w / 2.0) / math.tan(fov_rad / 2.0)
+
+        poly_2d = []
+        for pt in raw_verts:
+            vx, vy, vz = float(pt[0]), float(pt[1]), float(pt[2])
+            dx, dy, dz = vx - eye[0], vy - eye[1], vz - eye[2]
+            cx = dx * rx + dy * ry + dz * rz
+            cy = dx * ux + dy * uy + dz * uz
+            cz = dx * fx + dy * fy + dz * fz
+            if cz <= 1.0:
+                cz = 1.0
+            px = screen_w / 2.0 + (cx * focal_len / cz)
+            py = screen_h / 2.0 - (cy * focal_len / cz)
+            poly_2d.append((px, py))
+
+        v0, v1, v2 = raw_verts[0], raw_verts[1], raw_verts[2]
+        ax, ay, az = v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]
+        bx, by, bz = v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]
+        nx = ay * bz - az * by
+        ny = az * bx - ax * bz
+        nz = ax * by - ay * bx
+        n_len = math.sqrt(nx*nx + ny*ny + nz*nz) or 1.0
+        nx, ny, nz = nx/n_len, ny/n_len, nz/n_len
+
+        lx, ly, lz = 0.577, 0.577, 0.577
+        dot = max(0.2, min(1.0, abs(nx*lx + ny*ly + nz*lz)))
+
+        self.poly3d_buffer.append({"points": poly_2d, "intensity": dot, "color": color})
+        if self.gui and self.gui.canvas:
+            coords = []
+            for p in poly_2d:
+                coords.extend(p)
+            self.gui.canvas.create_polygon(coords, fill=color, outline="black")
+
+    def _eval_tilemap_init(self, stmt, env):
+        _, id_e, size_tup, tile_tup, tileset_e, line = stmt
+        map_id = str(self.eval_expr(id_e, env))
+        sx = int(self.eval_coord(size_tup[0], env))
+        sy = int(self.eval_coord(size_tup[1], env))
+        tw = int(self.eval_coord(tile_tup[0], env))
+        th = int(self.eval_coord(tile_tup[1], env))
+        tileset = str(self.eval_expr(tileset_e, env))
+        self.tilemaps[map_id] = {
+            "w": sx,
+            "h": sy,
+            "tw": tw,
+            "th": th,
+            "tileset": tileset,
+            "grid": [[0 for _ in range(sx)] for _ in range(sy)]
+        }
+        env.set(map_id, self.tilemaps[map_id]["grid"])
+
+    def _eval_tilemap_draw(self, stmt, env):
+        _, id_e, cam_tup, view_tup, line = stmt
+        map_id = str(self.eval_expr(id_e, env))
+        if map_id not in self.tilemaps:
+            raise TrappyError(f"Tilemap '{map_id}' not initialized", line)
+        tmap = self.tilemaps[map_id]
+        cx = int(self.eval_coord(cam_tup[0], env))
+        cy = int(self.eval_coord(cam_tup[1], env))
+        vw = int(self.eval_coord(view_tup[0], env))
+        vh = int(self.eval_coord(view_tup[1], env))
+
+        tw, th = tmap["tw"], tmap["th"]
+        start_col = max(0, cx // tw)
+        end_col = min(tmap["w"], (cx + vw + tw - 1) // tw)
+        start_row = max(0, cy // th)
+        end_row = min(tmap["h"], (cy + vh + th - 1) // th)
+
+        tiles_rendered = 0
+        grid = env.get(map_id, line) if env.has(map_id) else tmap["grid"]
+        for r in range(start_row, end_row):
+            for c in range(start_col, end_col):
+                tid = grid[r][c] if r < len(grid) and c < len(grid[r]) else 0
+                if tid != 0:
+                    tiles_rendered += 1
+                    if self.gui and self.gui.canvas:
+                        screen_x = c * tw - cx
+                        screen_y = r * th - cy
+                        self.gui.canvas.create_rectangle(
+                            screen_x, screen_y, screen_x + tw, screen_y + th,
+                            fill="cyan", outline="white"
+                        )
+        self.last_tilemap_draw = {
+            "id": map_id,
+            "cam": (cx, cy),
+            "rendered": tiles_rendered
+        }
+
+    def _eval_particle_emitter(self, stmt, env):
+        _, id_e, pos_tup, count_e, color, vx_e, vy_e, life_e, line = stmt
+        eid = str(self.eval_expr(id_e, env))
+        x = float(self.eval_coord(pos_tup[0], env))
+        y = float(self.eval_coord(pos_tup[1], env))
+        count = int(self.eval_coord(count_e, env))
+        vx = float(self.eval_coord(vx_e, env))
+        vy = float(self.eval_coord(vy_e, env))
+        life = float(self.eval_coord(life_e, env))
+
+        particles = []
+        for _ in range(count):
+            p_vx = vx + random.uniform(-1.0, 1.0)
+            p_vy = vy + random.uniform(-1.0, 1.0)
+            particles.append({
+                "x": x, "y": y,
+                "vx": p_vx, "vy": p_vy,
+                "color": color,
+                "life": life,
+                "max_life": life
+            })
+            if self.gui and self.gui.canvas:
+                self.gui.canvas.create_oval(x-2, y-2, x+2, y+2, fill=color, outline=color)
+        self.particle_systems[eid] = particles
+
+    def _eval_synth_adsr(self, stmt, env):
+        _, wf_e, freq_e, dur_e, att_e, dec_e, sus_e, rel_e, line = stmt
+        waveform = str(self.eval_expr(wf_e, env)).lower()
+        freq = float(self.eval_coord(freq_e, env))
+        dur_ms = float(self.eval_coord(dur_e, env))
+        attack = float(self.eval_coord(att_e, env))
+        decay = float(self.eval_coord(dec_e, env))
+        sustain = float(self.eval_coord(sus_e, env))
+        release = float(self.eval_coord(rel_e, env))
+
+        self.last_synth_adsr = {
+            "waveform": waveform,
+            "freq": freq,
+            "duration": dur_ms,
+            "attack": attack,
+            "decay": decay,
+            "sustain": sustain,
+            "release": release
+        }
+        if winsound and dur_ms > 0 and freq > 0:
+            try:
+                winsound.Beep(max(37, min(32767, int(freq))), max(1, int(dur_ms)))
+            except Exception:
+                pass
+
+    def _eval_sys_clipboard_set(self, stmt, env):
+        _, text_expr, line = stmt
+        val = str(self.eval_expr(text_expr, env))
+        self.clipboard_data = val
+        if self.gui and self.gui.root:
+            try:
+                self.gui.root.clipboard_clear()
+                self.gui.root.clipboard_append(val)
+            except Exception:
+                pass
+
+    def _eval_sys_clipboard_get(self, stmt, env):
+        _, target, line = stmt
+        val = self.clipboard_data
+        if self.gui and self.gui.root:
+            try:
+                val = self.gui.root.clipboard_get()
+            except Exception:
+                pass
+        self._set_target(target, val, env, line)
+
+    def _eval_sys_dialog_open(self, stmt, env):
+        _, title_e, filt_e, target, line = stmt
+        title = str(self.eval_expr(title_e, env))
+        filt = str(self.eval_expr(filt_e, env))
+        chosen = ""
+        try:
+            from tkinter import filedialog
+            if self.gui and self.gui.root:
+                chosen = filedialog.askopenfilename(title=title)
+        except Exception:
+            pass
+        if not chosen:
+            chosen = "mock_open.dat"
+        self._set_target(target, chosen, env, line)
+
+    def _eval_sys_dialog_save(self, stmt, env):
+        _, title_e, filt_e, target, line = stmt
+        title = str(self.eval_expr(title_e, env))
+        filt = str(self.eval_expr(filt_e, env))
+        chosen = ""
+        try:
+            from tkinter import filedialog
+            if self.gui and self.gui.root:
+                chosen = filedialog.asksaveasfilename(title=title)
+        except Exception:
+            pass
+        if not chosen:
+            chosen = "mock_save.dat"
+        self._set_target(target, chosen, env, line)
+
+    def _eval_ui_container(self, stmt, env):
+        _, id_e, orient_e, pos_tup, size_tup, body, line = stmt
+        cid = str(self.eval_expr(id_e, env))
+        orient = str(self.eval_expr(orient_e, env))
+        x = float(self.eval_coord(pos_tup[0], env))
+        y = float(self.eval_coord(pos_tup[1], env))
+        w = float(self.eval_coord(size_tup[0], env))
+        h = float(self.eval_coord(size_tup[1], env))
+        self.ui_containers[cid] = {
+            "id": cid, "orientation": orient,
+            "x": x, "y": y, "w": w, "h": h
+        }
+        for s in body:
+            self.eval_stmt(s, env)
+
+    def _eval_ui_tabs(self, stmt, env):
+        _, tabs_e, target, line = stmt
+        tabs = self.eval_expr(tabs_e, env)
+        if not isinstance(tabs, (list, tuple)) or not tabs:
+            tabs = ["Tab1"]
+        active = str(tabs[0])
+        self._set_target(target, active, env, line)
+
+    def _eval_ai_conv2d(self, stmt, env):
+        _, mat_e, kern_e, stride_e, target, line = stmt
+        mat = self.eval_expr(mat_e, env)
+        kern = self.eval_expr(kern_e, env)
+        stride = int(self.eval_expr(stride_e, env))
+        if not (isinstance(mat, list) and mat and isinstance(mat[0], list)):
+            raise TrappyError("ai_conv2d input must be a 2D matrix", line)
+        if not (isinstance(kern, list) and kern and isinstance(kern[0], list)):
+            raise TrappyError("ai_conv2d kernel must be a 2D matrix", line)
+
+        m_h, m_w = len(mat), len(mat[0])
+        k_h, k_w = len(kern), len(kern[0])
+        out_h = (m_h - k_h) // stride + 1
+        out_w = (m_w - k_w) // stride + 1
+        out = []
+        for i in range(out_h):
+            row = []
+            for j in range(out_w):
+                s = 0.0
+                for ki in range(k_h):
+                    for kj in range(k_w):
+                        s += float(mat[i * stride + ki][j * stride + kj]) * float(kern[ki][kj])
+                row.append(round(s, 6))
+            out.append(row)
+        self._set_target(target, out, env, line)
+
+    def _eval_ai_pool2d(self, stmt, env):
+        _, mat_e, pool_e, target, line = stmt
+        mat = self.eval_expr(mat_e, env)
+        pool_sz = int(self.eval_expr(pool_e, env))
+        if not (isinstance(mat, list) and mat and isinstance(mat[0], list)):
+            raise TrappyError("ai_pool2d input must be a 2D matrix", line)
+        m_h, m_w = len(mat), len(mat[0])
+        out_h = m_h // pool_sz
+        out_w = m_w // pool_sz
+        out = []
+        for i in range(out_h):
+            row = []
+            for j in range(out_w):
+                val = max(
+                    mat[i * pool_sz + ki][j * pool_sz + kj]
+                    for ki in range(pool_sz)
+                    for kj in range(pool_sz)
+                )
+                row.append(val)
+            out.append(row)
+        self._set_target(target, out, env, line)
+
+    def _eval_ai_gru_new(self, stmt, env):
+        _, id_e, in_size_e, hid_size_e, line = stmt
+        gid = str(self.eval_expr(id_e, env))
+        in_sz = int(self.eval_expr(in_size_e, env))
+        hid_sz = int(self.eval_expr(hid_size_e, env))
+        random.seed(42)
+        scale = 0.1
+        self.gru_models[gid] = {
+            "in_size": in_sz,
+            "hidden_size": hid_sz,
+            "hidden": [0.0] * hid_sz,
+            "Wz": [[random.uniform(-scale, scale) for _ in range(in_sz)] for _ in range(hid_sz)],
+            "Uz": [[random.uniform(-scale, scale) for _ in range(hid_sz)] for _ in range(hid_sz)],
+            "bz": [0.0] * hid_sz,
+            "Wr": [[random.uniform(-scale, scale) for _ in range(in_sz)] for _ in range(hid_sz)],
+            "Ur": [[random.uniform(-scale, scale) for _ in range(hid_sz)] for _ in range(hid_sz)],
+            "br": [0.0] * hid_sz,
+            "Wh": [[random.uniform(-scale, scale) for _ in range(in_sz)] for _ in range(hid_sz)],
+            "Uh": [[random.uniform(-scale, scale) for _ in range(hid_sz)] for _ in range(hid_sz)],
+            "bh": [0.0] * hid_sz,
+        }
+
+    def _eval_ai_gru_step(self, stmt, env):
+        _, id_e, in_vec_e, target, line = stmt
+        gid = str(self.eval_expr(id_e, env))
+        x = self.eval_expr(in_vec_e, env)
+        if gid not in self.gru_models:
+            raise TrappyError(f"GRU model '{gid}' not initialized", line)
+        model = self.gru_models[gid]
+        h = model["hidden"]
+        hid_sz = model["hidden_size"]
+        in_sz = model["in_size"]
+
+        def _sigmoid(val):
+            return 1.0 / (1.0 + math.exp(-max(-60.0, min(60.0, val))))
+
+        def _tanh(val):
+            return math.tanh(max(-60.0, min(60.0, val)))
+
+        z = []
+        for j in range(hid_sz):
+            val = model["bz"][j]
+            for i in range(min(len(x), in_sz)):
+                val += model["Wz"][j][i] * float(x[i])
+            for k in range(hid_sz):
+                val += model["Uz"][j][k] * h[k]
+            z.append(_sigmoid(val))
+
+        r = []
+        for j in range(hid_sz):
+            val = model["br"][j]
+            for i in range(min(len(x), in_sz)):
+                val += model["Wr"][j][i] * float(x[i])
+            for k in range(hid_sz):
+                val += model["Ur"][j][k] * h[k]
+            r.append(_sigmoid(val))
+
+        h_tilde = []
+        for j in range(hid_sz):
+            val = model["bh"][j]
+            for i in range(min(len(x), in_sz)):
+                val += model["Wh"][j][i] * float(x[i])
+            for k in range(hid_sz):
+                val += model["Uh"][j][k] * (r[k] * h[k])
+            h_tilde.append(_tanh(val))
+
+        next_h = []
+        for j in range(hid_sz):
+            h_next = (1.0 - z[j]) * h[j] + z[j] * h_tilde[j]
+            next_h.append(round(h_next, 6))
+
+        model["hidden"] = next_h
+        self._set_target(target, next_h, env, line)
+
+    def _eval_ai_audio_fft(self, stmt, env):
+        _, src_e, bands_e, target, line = stmt
+        src = self.eval_expr(src_e, env)
+        num_bands = int(self.eval_expr(bands_e, env))
+
+        samples = []
+        if isinstance(src, list):
+            samples = [float(s) for s in src]
+        elif isinstance(src, str):
+            if os.path.isfile(src) and src.lower().endswith(".wav"):
+                try:
+                    import wave
+                    with wave.open(src, "rb") as wf:
+                        frames = wf.readframes(min(1024, wf.getnframes()))
+                        import struct
+                        samples = [float(b) / 32768.0 for b in struct.unpack(f"{len(frames)//2}h", frames)]
+                except Exception:
+                    samples = [math.sin(i * 0.1) for i in range(128)]
+            else:
+                samples = [math.sin(i * 0.1) for i in range(128)]
+        if not samples:
+            samples = [0.0] * 128
+
+        N = len(samples)
+        bands = []
+        band_size = max(1, (N // 2) // num_bands)
+        for b in range(num_bands):
+            energy = 0.0
+            start_k = b * band_size
+            end_k = min(N // 2, (b + 1) * band_size)
+            for k in range(start_k, max(start_k + 1, end_k)):
+                real = sum(samples[n] * math.cos(2 * math.pi * k * n / N) for n in range(min(N, 64)))
+                imag = sum(-samples[n] * math.sin(2 * math.pi * k * n / N) for n in range(min(N, 64)))
+                energy += math.sqrt(real * real + imag * imag)
+            bands.append(round(energy / max(1, end_k - start_k), 4))
+        self._set_target(target, bands, env, line)
+
+    def _eval_ai_ga_init(self, stmt, env):
+        _, id_e, pop_e, layers_e, line = stmt
+        gid = str(self.eval_expr(id_e, env))
+        pop_sz = int(self.eval_expr(pop_e, env))
+        layers = self.eval_expr(layers_e, env)
+        population = []
+        for i in range(pop_sz):
+            net = MicroNeuralNet(layers)
+            population.append({"id": i, "net": net, "score": 0.0})
+        self.ga_populations[gid] = {
+            "pop_size": pop_sz,
+            "layers": layers,
+            "generation": 1,
+            "population": population
+        }
+
+    def _eval_ai_ga_score(self, stmt, env):
+        _, id_e, bot_id_e, score_e, line = stmt
+        gid = str(self.eval_expr(id_e, env))
+        bot_id = int(self.eval_expr(bot_id_e, env))
+        score = float(self.eval_expr(score_e, env))
+        if gid in self.ga_populations:
+            pop = self.ga_populations[gid]["population"]
+            if 0 <= bot_id < len(pop):
+                pop[bot_id]["score"] = score
+
+    def _eval_ai_ga_reproduce(self, stmt, env):
+        _, id_e, mut_e, elite_e, line = stmt
+        gid = str(self.eval_expr(id_e, env))
+        mutation_rate = float(self.eval_expr(mut_e, env))
+        elite_pct = float(self.eval_expr(elite_e, env))
+        if gid not in self.ga_populations:
+            raise TrappyError(f"GA population '{gid}' not found", line)
+        ga = self.ga_populations[gid]
+        pop = ga["population"]
+        pop.sort(key=lambda x: x["score"], reverse=True)
+        elite_count = max(1, int(len(pop) * elite_pct))
+        elites = pop[:elite_count]
+
+        new_pop = []
+        for i in range(ga["pop_size"]):
+            if i < elite_count:
+                new_pop.append({"id": i, "net": elites[i]["net"], "score": 0.0})
+            else:
+                p1 = random.choice(elites)["net"]
+                p2 = random.choice(elites)["net"]
+                child_net = MicroNeuralNet(ga["layers"])
+                for l in range(len(child_net.weights)):
+                    for r in range(len(child_net.weights[l])):
+                        for c in range(len(child_net.weights[l][r])):
+                            val = p1.weights[l][r][c] if random.random() < 0.5 else p2.weights[l][r][c]
+                            if random.random() < mutation_rate:
+                                val += random.uniform(-0.1, 0.1)
+                            child_net.weights[l][r][c] = val
+                new_pop.append({"id": i, "net": child_net, "score": 0.0})
+        ga["population"] = new_pop
+        ga["generation"] += 1
+
+    def _eval_os_mmu_page_alloc(self, stmt, env):
+        _, pid_e, vaddr_e, size_e, perms_e, line = stmt
+        pid = int(self.eval_expr(pid_e, env))
+        vaddr = int(self.eval_expr(vaddr_e, env))
+        size = int(self.eval_expr(size_e, env))
+        perms = str(self.eval_expr(perms_e, env))
+        self.os_kernel.mmu_page_alloc(pid, vaddr, size, perms)
+
+    def _eval_os_mmu_protect(self, stmt, env):
+        _, pid_e, vaddr_e, perms_e, line = stmt
+        pid = int(self.eval_expr(pid_e, env))
+        vaddr = int(self.eval_expr(vaddr_e, env))
+        perms = str(self.eval_expr(perms_e, env))
+        self.os_kernel.mmu_protect(pid, vaddr, perms)
+
+    def _eval_os_pipe(self, stmt, env):
+        _, r_target, w_target, line = stmt
+        r_fd, w_fd = self.os_kernel.pipe_create()
+        self._set_target(r_target, r_fd, env, line)
+        self._set_target(w_target, w_fd, env, line)
+
+    def _eval_os_redirect_stdout(self, stmt, env):
+        _, pid_e, fd_e, line = stmt
+        pid = int(self.eval_expr(pid_e, env))
+        fd = int(self.eval_expr(fd_e, env))
+        self.os_kernel.redirect_stdout(pid, fd)
+
+    def _eval_os_redirect_stdin(self, stmt, env):
+        _, pid_e, fd_e, line = stmt
+        pid = int(self.eval_expr(pid_e, env))
+        fd = int(self.eval_expr(fd_e, env))
+        self.os_kernel.redirect_stdin(pid, fd)
+
+    def _eval_os_driver_register(self, stmt, env):
+        _, name_e, ring_e, target, line = stmt
+        name = str(self.eval_expr(name_e, env))
+        ring = int(self.eval_expr(ring_e, env))
+        handle = self.os_kernel.driver_register(name, ring)
+        self._set_target(target, handle, env, line)
+
+    def _eval_os_driver_hook(self, stmt, env):
+        _, handle_e, syscall_e, cb_e, line = stmt
+        handle = int(self.eval_expr(handle_e, env))
+        syscall_id = str(self.eval_expr(syscall_e, env))
+        cb = str(self.eval_expr(cb_e, env))
+        self.os_kernel.driver_hook(handle, syscall_id, cb)
 
     def _eval_os_shutdown(self, stmt, env):
         self.os_kernel.shutdown()

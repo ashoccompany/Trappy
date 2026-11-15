@@ -10,6 +10,7 @@ Only the latest active release branch receives active security patches.
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 2.0.x   | Yes                |
 | 1.7.x   | Yes                |
 | 1.6.x   | Yes                |
 | 1.5.x   | Yes                |

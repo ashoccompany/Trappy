@@ -2,7 +2,7 @@
 
 Trappy is an independent, universal programming language built from scratch. Its guiding design law is simple: **simple needs to be simple**. Beginners can create working games, apps, and network clients immediately, while advanced creators can connect almost anything across the web and local systems without pages of configuration or third-party dependencies.
 
-Current version: **v1.7.0 (Micro-AI Development Engine & Universal Command Manual Release)**
+Current version: **v2.0.0 (Pure Scratch-Built Identity, Absolute Self-Hosting & TVM Architecture Release)**
 
 ---
 
@@ -287,7 +287,16 @@ tpm list                            List installed packages
   * **Exception Handling:** Added `try ... catch <err> ... tren` native exception recovery.
   * **Collection Ergonomics:** Added `lcontains`, `linsert`, `lslice`, `dhas`, `ddel`.
   * **32-Test Automated Suite:** Expanded automated test suite with 100% pass rate.
-* **v2.0.0 (Upcoming Self-Hosting Milestone):** Complete self-hosting bootstrap compiler where Trappy compiles and interprets itself natively without requiring the Python host runtime.
+* **v2.0.0 (Pure Scratch-Built Identity, Absolute Self-Hosting & TVM Architecture Release):**
+  * **Pure Scratch-Built Grammar:** Replaced generic borrowed tropes with unique Trappy keywords: `loadpk` (module linking), `efr` (multi-branch else-ifr), `brch` / `cas` / `othr` (pattern branching), `txtf` (formatted string interpolation), and explicit `call` invocation.
+  * **Syntax & Parser Modernization:** Native bracket indexing and assignment (`stats[0] = 50`, `matrix[1][0] = 99`), dictionary manifest literals (`{ "key": val, ... }`), compound boolean operators with full precedence climbing (`and`, `or`, `not`, `&&`, `||`, `!`), and colon/comma function argument delimiters (`fn add a:b`).
+  * **Trappy Virtual Machine (TVM):** 16-opcode ultra-fast virtual machine (`tvm_runtime.py` and zero-dependency ANSI C `tvm_runtime.c` compiled to `tvm.exe`) loading binary `.trpc` executable files (`TRPC\x02\x00`).
+  * **100% Pure-Trappy Self-Hosting Compiler:** Lexer (`bootstrap/lexer.trappy`), recursive-descent parser (`bootstrap/parser.trappy`), bytecode emitter (`bootstrap/codegen.trappy`), and compiler driver (`bootstrap/compiler.trappy`) written entirely in Trappy, verified with bit-for-bit self-compilation.
+  * **Advanced 3D & Graphics 2.0:** Perspective projection 3D camera (`cam3d`) and depth-sorted shaded polygons (`poly3d`). 2D tilemap game level engine (`tilemap_init`, `tilemap_draw`), particle physics emitter (`particle_emitter`), and ADSR sound envelope synthesis (`synth_adsr`).
+  * **Native Dialogs & UI Containers:** Host clipboard integration (`sys_clipboard_set`, `sys_clipboard_get`), native open/save dialogs (`sys_dialog_open`, `sys_dialog_save`), auto-layout responsive cards (`ui_container`), and multi-tab managers (`ui_tabs`).
+  * **Micro-AI Development Engine 2.0:** 2D spatial convolution (`ai_conv2d`), max/average pooling (`ai_pool2d`), Gated Recurrent Unit sequential memory layers (`ai_gru_new`, `ai_gru_step`), Fast Fourier Transform audio spectrum analysis (`ai_audio_fft`), and genetic algorithms (`ai_ga_init`, `ai_ga_score`, `ai_ga_reproduce`).
+  * **Operating System Simulation Suite 2.0:** Virtual MMU page allocation and memory protection (`os_mmu_page_alloc`, `os_mmu_protect`), virtual UNIX pipes (`os_pipe`), stream redirection (`os_redirect_stdout`, `os_redirect_stdin`), and dynamic Ring 1 hardware drivers (`os_driver_register`, `os_driver_hook`).
+  * **114 Automated Unit Tests:** 100% test pass rate across baseline, OS, AI, v2 grammar, and TVM bootstrap suites.
 
 ---
 

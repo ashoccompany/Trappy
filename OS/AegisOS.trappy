@@ -363,11 +363,11 @@ trst
     # BOTTOM TASKBAR CONTROLS & QUICK LAUNCHERS (100% UNCLIPPED & VISIBLE)
     # --------------------------------------------------------------------------
     btn " [ Aegis START ] " 15:650 trg on_start_menu
-    btn " 🌐 Browser " 165:650 trg on_exec_search
-    btn " 🧮 Calculator " 285:650 trg on_launch_calc
-    btn " ⚙️ Settings " 415:650 trg on_dump_settings
-    btn " 🛡️ Audit Scan " 535:650 trg on_run_audit
-    btn " 🚨 Lock Core " 665:650 trg on_emergency_lock
+    btn " [Browser] " 165:650 trg on_exec_search
+    btn " [Calculator] " 285:650 trg on_launch_calc
+    btn " [Settings] " 415:650 trg on_dump_settings
+    btn " [Audit Scan] " 535:650 trg on_run_audit
+    btn " [Lock Core] " 665:650 trg on_emergency_lock
 
     # Taskbar System Tray Indicators
     circ 820:665 5 green

@@ -1,0 +1,207 @@
+# Trappy v2.0 Bootstrap Lexer
+# Written 100% in Trappy language.
+# Author: ashoccompany / Asham
+# Zero generic tropes, zero external dependencies.
+
+trst
+
+fn tokenize_trappy src
+    dict tit res
+    lst 0 eq token_types
+    lst 0 eq token_values
+    lpop token_types tit dummy1
+    lpop token_values tit dummy2
+
+    slen src tit length
+    mh 0 eq pos
+
+    while pos < length
+        sget src:pos tit ch
+        ord ch tit code
+
+        # Whitespace: space(32), newline(10), cr(13), tab(9)
+        ifr code == 32 || code == 10 || code == 13 || code == 9
+            mh pos + 1 eq pos
+        else
+            # Single-line comment starting with '#' (35)
+            ifr code == 35
+                while pos < length
+                    sget src:pos tit cch
+                    ord cch tit ccode
+                    ifr ccode == 10
+                        break
+                    tren
+                    mh pos + 1 eq pos
+                tren
+            else
+                # Slash comments: '//' or '/*'
+                mh 0 eq is_slash_comment
+                ifr code == 47
+                    mh pos + 1 eq next_pos
+                    ifr next_pos < length
+                        sget src:next_pos tit next_ch
+                        ord next_ch tit next_code
+                        # Single-line comment '//' (47)
+                        ifr next_code == 47
+                            mh 1 eq is_slash_comment
+                            mh pos + 2 eq pos
+                            while pos < length
+                                sget src:pos tit scch
+                                ord scch tit sccode
+                                ifr sccode == 10
+                                    break
+                                tren
+                                mh pos + 1 eq pos
+                            tren
+                        else
+                            # Block comment '/*' (42)
+                            ifr next_code == 42
+                                mh 1 eq is_slash_comment
+                                mh pos + 2 eq pos
+                                while pos < length
+                                    sget src:pos tit bch
+                                    ord bch tit bcode
+                                    ifr bcode == 42
+                                        mh pos + 1 eq bnext
+                                        ifr bnext < length
+                                            sget src:bnext tit bnch
+                                            ord bnch tit bncode
+                                            ifr bncode == 47
+                                                mh pos + 2 eq pos
+                                                break
+                                            tren
+                                        tren
+                                    tren
+                                    mh pos + 1 eq pos
+                                tren
+                            tren
+                        tren
+                    tren
+                tren
+
+                ifr is_slash_comment == 0
+                    # String literal starting with '"' (34)
+                    ifr code == 34
+                        mh pos + 1 eq pos
+                        mh pos eq s_start
+                        while pos < length
+                            sget src:pos tit sch
+                            ord sch tit scode
+                            ifr scode == 34
+                                break
+                            tren
+                            mh pos + 1 eq pos
+                        tren
+                        ssub src:s_start:pos tit s_val
+                        lpush token_types:"STR"
+                        lpush token_values:s_val
+                        mh pos + 1 eq pos
+                    else
+                        # Numeric literal
+                        is_digit ch tit is_d
+                        ifr is_d == 1
+                            mh pos eq n_start
+                            while pos < length
+                                sget src:pos tit nch
+                                is_digit nch tit nd_flag
+                                ifr nd_flag == 1
+                                    mh pos + 1 eq pos
+                                else
+                                    break
+                                tren
+                            tren
+                            ssub src:n_start:pos tit n_str
+                            to_num n_str tit n_val
+                            lpush token_types:"NUM"
+                            lpush token_values:n_val
+                        else
+                            # Identifier or keyword
+                            is_alpha ch tit is_a
+                            ifr is_a == 1
+                                mh pos eq id_start
+                                while pos < length
+                                    sget src:pos tit idch
+                                    is_alpha idch tit a_flag
+                                    is_digit idch tit d_flag
+                                    ord idch tit ich_code
+                                    mh 0 eq u_flag
+                                    ifr ich_code == 95
+                                        mh 1 eq u_flag
+                                    tren
+                                    mh a_flag + d_flag eq valid_flag
+                                    mh valid_flag + u_flag eq valid_flag
+                                    ifr valid_flag > 0
+                                        mh pos + 1 eq pos
+                                    else
+                                        break
+                                    tren
+                                tren
+                                ssub src:id_start:pos tit id_str
+                                lpush token_types:"NAME"
+                                lpush token_values:id_str
+                            else
+                                # Multi-character operators: ==, !=, <=, >=, &&, ||
+                                mh 0 eq is_multi_op
+                                mh pos + 1 eq p1
+                                ifr p1 < length
+                                    sget src:p1 tit ch1
+                                    ord ch1 tit code1
+                                    ifr code == 61 && code1 == 61
+                                        lpush token_types:"=="
+                                        lpush token_values:"=="
+                                        mh pos + 2 eq pos
+                                        mh 1 eq is_multi_op
+                                    tren
+                                    ifr is_multi_op == 0 && code == 33 && code1 == 61
+                                        lpush token_types:"!="
+                                        lpush token_values:"!="
+                                        mh pos + 2 eq pos
+                                        mh 1 eq is_multi_op
+                                    tren
+                                    ifr is_multi_op == 0 && code == 60 && code1 == 61
+                                        lpush token_types:"<="
+                                        lpush token_values:"<="
+                                        mh pos + 2 eq pos
+                                        mh 1 eq is_multi_op
+                                    tren
+                                    ifr is_multi_op == 0 && code == 62 && code1 == 61
+                                        lpush token_types:">="
+                                        lpush token_values:">="
+                                        mh pos + 2 eq pos
+                                        mh 1 eq is_multi_op
+                                    tren
+                                    ifr is_multi_op == 0 && code == 38 && code1 == 38
+                                        lpush token_types:"&&"
+                                        lpush token_values:"&&"
+                                        mh pos + 2 eq pos
+                                        mh 1 eq is_multi_op
+                                    tren
+                                    ifr is_multi_op == 0 && code == 124 && code1 == 124
+                                        lpush token_types:"||"
+                                        lpush token_values:"||"
+                                        mh pos + 2 eq pos
+                                        mh 1 eq is_multi_op
+                                    tren
+                                tren
+
+                                ifr is_multi_op == 0
+                                    # Single character symbol or operator
+                                    lpush token_types:ch
+                                    lpush token_values:ch
+                                    mh pos + 1 eq pos
+                                tren
+                            tren
+                        tren
+                    tren
+                tren
+            tren
+        tren
+    tren
+
+    dset res:"types":token_types
+    dset res:"values":token_values
+    return res
+tren
+
+tren
+

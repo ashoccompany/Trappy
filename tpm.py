@@ -19,7 +19,7 @@ def ensure_dirs():
         os.makedirs(COMMUNITY_HUB_DIR)
     if not os.path.exists(INDEX_FILE):
         default_index = {
-            "version": "1.0.0",
+            "version": "2.0.0",
             "packages": {
                 "packet_utils": {
                     "version": "1.0.0",

@@ -24,33 +24,34 @@ DISCORD_COLOR = "#5865F2"
 
 ASSIST_KEYWORDS = [
     "abs", "add_func", "add_obj", "add_type", "add_var", "ai_agent_act", "ai_agent_load", "ai_agent_new",
-    "ai_agent_reward", "ai_agent_save", "ai_embed", "ai_net_classify", "ai_net_load", "ai_net_new", "ai_net_predict", "ai_net_save",
-    "ai_net_train", "ai_ngram_gen", "ai_ngram_train", "ai_sim", "ai_tokenize", "ai_ui_agent", "ai_ui_chat", "ai_ui_net",
-    "answ", "as", "ath", "badge", "band", "beep", "bnot", "bor",
-    "box_hit", "break", "bshl", "bshr", "btn", "btn_modern", "bxor", "card",
+    "ai_agent_reward", "ai_agent_save", "ai_audio_fft", "ai_conv2d", "ai_embed", "ai_ga_init", "ai_ga_reproduce",
+    "ai_ga_score", "ai_gru_new", "ai_gru_step", "ai_net_classify", "ai_net_load", "ai_net_new", "ai_net_predict", "ai_net_save",
+    "ai_net_train", "ai_ngram_gen", "ai_ngram_train", "ai_pool2d", "ai_sim", "ai_tokenize", "ai_ui_agent", "ai_ui_chat", "ai_ui_net",
+    "and", "answ", "as", "ath", "badge", "band", "beep", "bnot", "bor",
+    "box_hit", "brch", "break", "bshl", "bshr", "btn", "btn_modern", "bxor", "call", "cam3d", "card", "cas",
     "catch", "chr", "circ", "clamp", "cli_close", "cli_connect", "cli_recv", "cli_send",
     "cnt", "continue", "cos", "cube3d", "cwin", "ddel", "dget", "dhas",
     "dict", "dir_list", "discord_webhook", "dist", "dkeys", "download", "dset", "each",
-    "else", "eq", "exit", "f3d", "fai", "false", "fapp", "fcli",
+    "efr", "else", "eq", "exit", "f3d", "fai", "false", "fapp", "fcli",
     "fdel", "file_append", "file_delete", "file_exists", "file_read", "file_write", "flist", "fmh",
     "fn", "fos", "ftxt", "fui", "func", "fweb", "gan", "gloop",
     "grt", "http_get", "http_post", "icon", "ifr", "import", "in", "inf",
     "inp", "is_alpha", "is_digit", "json_dump", "json_parse", "key", "label", "lcontains",
-    "lget", "line", "line3d", "linsert", "llen", "loop", "lpop", "lpush",
+    "lget", "line", "line3d", "linsert", "llen", "loadpk", "loop", "lpop", "lpush",
     "lset", "lslice", "lss", "lst", "mem_alloc", "mem_read", "mem_write", "mh",
-    "notify_toast", "ord", "os_ai_anomaly_check", "os_ai_assistant", "os_app_download", "os_app_install", "os_app_kill", "os_app_launch",
-    "os_app_list", "os_app_uninstall", "os_battery_info", "os_block_list", "os_boot", "os_defense_hook", "os_exploit_guard", "os_exploit_status",
+    "not", "notify_toast", "or", "ord", "os_ai_anomaly_check", "os_ai_assistant", "os_app_download", "os_app_install", "os_app_kill", "os_app_launch",
+    "os_app_list", "os_app_uninstall", "os_battery_info", "os_block_list", "os_boot", "os_defense_hook", "os_driver_hook", "os_driver_register", "os_exploit_guard", "os_exploit_status",
     "os_firewall_rule", "os_hw_info", "os_integrity_seal", "os_integrity_verify", "os_ipc_recv", "os_ipc_send", "os_jailbreak_check", "os_jailbreak_defend",
-    "os_panic", "os_perm_check", "os_perm_grant", "os_perm_revoke", "os_proc_kill", "os_proc_list", "os_proc_spawn", "os_ring_get",
+    "os_mmu_page_alloc", "os_mmu_protect", "os_panic", "os_perm_check", "os_perm_grant", "os_perm_revoke", "os_pipe", "os_proc_kill", "os_proc_list", "os_proc_spawn", "os_redirect_stdin", "os_redirect_stdout", "os_ring_get",
     "os_ring_set", "os_screen_mode", "os_setting_dump", "os_setting_get", "os_setting_set", "os_shutdown", "os_touch_event", "os_ui_notify",
     "os_ui_render", "os_ui_taskbar", "os_ui_window", "os_vfs_del", "os_vfs_list", "os_vfs_mount", "os_vfs_read", "os_vfs_stat",
-    "os_vfs_write", "os_yield", "pack_data", "play", "pow", "progress", "pyramid3d", "regle",
+    "os_vfs_write", "os_yield", "othr", "pack_data", "particle_emitter", "play", "poly3d", "pow", "progress", "pyramid3d", "regle",
     "rep", "return", "rnd", "rt", "sbgwin", "sfind", "sget", "sin",
     "sjoin", "slen", "slider", "sloop", "slower", "sm", "spawn", "sphere3d",
     "sqrt", "srep", "sreplace", "srv_accept", "srv_listen", "ssplit", "ssub", "strim",
-    "supper", "swhile", "synth", "sys_env", "sys_exec", "then", "tit", "to_float",
+    "supper", "swhile", "synth", "synth_adsr", "sys_clipboard_get", "sys_clipboard_set", "sys_dialog_open", "sys_dialog_save", "sys_env", "sys_exec", "then", "tilemap_draw", "tilemap_init", "tit", "to_float",
     "to_int", "to_num", "to_str", "toggle", "tren", "trst", "true", "try",
-    "txt", "type_of", "ui_ease", "ui_theme", "unpack_data", "vec_add", "vec_mag", "while",
+    "txt", "txtf", "type_of", "ui_container", "ui_ease", "ui_tabs", "ui_theme", "unpack_data", "vec_add", "vec_mag", "while",
     "ws_close", "ws_connect", "ws_recv", "ws_send"
 ]
 
@@ -61,7 +62,7 @@ HIGHLIGHT_KEYWORDS = list(set(ASSIST_KEYWORDS + [
 MANUAL_DATABASE = [
     ("trst", "trst ... tren", "Marks the entry point and start of the Trappy program or function execution block.", "trst\n    out \"Program initialized\"\ntren"),
     ("tren", "tren", "Terminates the current code block, function body, loop, or main program scope.", "trst\n    out \"Running\"\ntren"),
-    ("txt", "txt \"string\" tit var_name", "Declares a text variable and assigns a string literal value.", "txt \"Welcome to Trappy v1.7\" tit greeting\nout greeting"),
+    ("txt", "txt \"string\" tit var_name", "Declares a text variable and assigns a string literal value.", "txt \"Welcome to Trappy v2.0\" tit greeting\nout greeting"),
     ("tit", "... tit var_name", "Target assignment keyword used across commands to store results into variables.", "slen \"Trappy\" tit length\nout length"),
     ("inf", "inf \"message\"", "Outputs an informational system notice to standard output or the IDE console.", "inf \"System subsystem ready\""),
     ("ath", "ath \"Author Name\"", "Declares author attribution metadata for the current script or application.", "ath \"ashoccompany / Asham\""),
@@ -245,7 +246,7 @@ MANUAL_DATABASE = [
     ("badge", "badge \"Text\" x:y [variant]", "Renders modern status badge pill with colored indicator dot (secure, warning, danger, info, neutral).", "badge \"SECURE\" 30:30 \"secure\""),
     ("slider", "slider var min max x:y w [trg fn]", "Renders modern interactive slider with rounded track, progress fill, and draggable thumb knob.", "slider brightness 0 100 50:350 200 trg on_slide"),
     ("icon", "icon \"name\" x:y [size] [color]", "Renders built-in vector glyph icons (shield, lock, unlock, gear, terminal, wifi, battery, cpu, check, cross, star, bell, user, folder, play, ai, bot).", "icon \"shield\" 10:10 24 \"#06b6d4\""),
-    ("notify_toast", "notify_toast \"Title\" \"Message\" [level]", "Presents floating modern toast notification card with accent strip and auto-dismiss timer.", "notify_toast \"System Notice\" \"v1.7 Kernel Active\" \"info\""),
+    ("notify_toast", "notify_toast \"Title\" \"Message\" [level]", "Presents floating modern toast notification card with accent strip and auto-dismiss timer.", "notify_toast \"System Notice\" \"v2.0 Kernel Active\" \"info\""),
     ("ui_theme", "ui_theme \"dark\"|\"cyber\"|\"glass\"|\"light\"|\"nord\"", "Switches active GUI theme setting default canvas background and palette colors.", "ui_theme \"cyber\""),
     ("ui_ease", "ui_ease var start end t [style]", "Calculates animation easing interpolation across styles (linear, ease_in, ease_out, ease_in_out, bounce). Usable inline via ui_ease(start:end:t:style).", "ui_ease smooth_x 0 100 0.5 \"ease_out\""),
     ("ai_net_new", "ai_net_new \"name\" [layers] [activation]", "Initializes a feedforward neural network with Xavier initialization and configurable activation function (sigmoid, relu, tanh).", "ai_net_new \"xor_net\" [2, 4, 1] \"sigmoid\""),
@@ -259,7 +260,7 @@ MANUAL_DATABASE = [
     ("ai_agent_reward", "ai_agent_reward \"name\" state action reward next_state", "Updates agent Q-value table using Bellman equation based on observed environment reward and transition.", "ai_agent_reward \"bot\" \"room_1\" \"right\" 10.0 \"room_2\""),
     ("ai_agent_save", "ai_agent_save \"name\" \"path.json\"", "Saves reinforcement learning agent learned Q-table policy and hyperparameters to JSON file.", "ai_agent_save \"bot\" \"models/agent.json\""),
     ("ai_agent_load", "ai_agent_load \"name\" \"path.json\"", "Loads reinforcement learning agent learned policy and Q-table from JSON file.", "ai_agent_load \"bot2\" \"models/agent.json\""),
-    ("ai_tokenize", "ai_tokenize \"text string\" tit tokens", "Splits natural language text into a clean normalized list of lowercase word tokens.", "ai_tokenize \"Trappy Micro AI Engine v1.7\" tit words\nout words"),
+    ("ai_tokenize", "ai_tokenize \"text string\" tit tokens", "Splits natural language text into a clean normalized list of lowercase word tokens.", "ai_tokenize \"Trappy Micro AI Engine v2.0\" tit words\nout words"),
     ("ai_embed", "ai_embed tokens vocab|dim tit vector", "Embeds word tokens into a dense numerical vector using feature hashing or vocabulary bag-of-words.", "ai_embed words 16 tit embedding_vector"),
     ("ai_sim", "ai_sim vec1 vec2 tit score", "Calculates cosine similarity between two embedding vectors, returning similarity score from -1.0 to 1.0.", "ai_sim vec_a vec_b tit similarity_score"),
     ("ai_ngram_train", "ai_ngram_train \"name\" \"corpus text\" [n]", "Trains probabilistic Markov n-gram text generation model on source text corpus.", "ai_ngram_train \"markov\" \"trappy is fast trappy is secure trappy is modern\" 2"),
@@ -315,12 +316,46 @@ MANUAL_DATABASE = [
     ("os_exploit_status", "os_exploit_status tit status", "Returns diagnostic summary of active exploit guards and logged violation events.", "os_exploit_status tit guard_status"),
     ("os_ai_anomaly_check", "os_ai_anomaly_check [metrics] tit report", "Employs kernel AI engine to analyze real-time CPU, RAM, and syscall telemetry to detect intrusions and anomalies.", "os_ai_anomaly_check [10.0, 20.0, 5.0] tit anomaly_report"),
     ("os_ai_assistant", "os_ai_assistant \"prompt\" tit response", "Embedded intelligent OS assistant for real-time natural language system diagnosis, status queries, and security remediation.", "os_ai_assistant \"diagnose system health\" tit response"),
+    ("loadpk", "loadpk \"path.trappy\" tit pkg_name", "Loads and links external Trappy module or package, exposing exported variables and functions under a namespaced object.", "loadpk \"math_utils.trappy\" tit mutils\ncall mutils.square 7 tit result"),
+    ("efr", "efr condition ... tren", "Else-IFr multi-branch control flow chain clause, executing conditionally if previous ifr or efr conditions evaluated to false.", "ifr score >= 90\n    txt \"S\" tit rank\nefr score >= 80\n    txt \"A\" tit rank\nelse\n    txt \"B\" tit rank\ntren"),
+    ("brch", "brch expr ... cas val ... othr ... tren", "Pattern branch matching statement executing matched cas block or othr fallback.", "brch action\n    cas \"ATTACK\"\n        mh 50 eq damage\n    othr\n        mh 0 eq damage\ntren"),
+    ("cas", "cas literal", "Matches a specific case value in a brch pattern statement.", "cas \"IDLE\""),
+    ("othr", "othr", "Fallback clause in a brch pattern statement executed when no preceding cas matched.", "othr\n    out \"Unknown action\""),
+    ("txtf", "txtf \"template {expr} ...\" tit var", "Modern formatted string interpolation replacing bracketed expressions with evaluated values.", "txtf \"Score: {high_score}\" tit banner"),
+    ("call", "call fn_name args... tit dest", "Invokes a named function or namespaced package function with argument expressions and optional result target.", "call add_two 10:20 tit val"),
+    ("cam3d", "cam3d x:y:z look_x:look_y:look_z [fov]", "Configures 3D projection camera position, target look-at vector, and field of view angle.", "cam3d 0:150:400 0:0:0 60"),
+    ("poly3d", "poly3d [[x, y, z], ...] [color]", "Draws a 3D perspective-projected and depth-sorted shaded polygon face.", "poly3d [[0, 50, 0], [-25, 0, -25], [25, 0, -25]] cyan"),
+    ("tilemap_init", "tilemap_init cols rows tile_w:tile_h", "Initializes a 2D tilemap grid system for game world levels.", "tilemap_init 20 15 32:32"),
+    ("tilemap_draw", "tilemap_draw \"tileset\" cam_x:cam_y", "Renders the active 2D tilemap with viewport camera offset.", "tilemap_draw \"level1\" 0:0"),
+    ("particle_emitter", "particle_emitter x:y \"type\" count speed", "Spawns particle physics visual effects (fire, smoke, sparks, snow) with lifetime simulation.", "particle_emitter 200:150 \"spark\" 30 500"),
+    ("synth_adsr", "synth_adsr freq attack decay sustain release", "Synthesizes synthesized audio tone with ADSR envelope modulation.", "synth_adsr 440 0.1 0.1 0.7 0.2"),
+    ("sys_clipboard_set", "sys_clipboard_set text", "Writes text string to the host system clipboard.", "sys_clipboard_set \"Trappy Code\""),
+    ("sys_clipboard_get", "sys_clipboard_get tit var", "Reads current text contents from the host system clipboard.", "sys_clipboard_get tit clipboard_text"),
+    ("sys_dialog_open", "sys_dialog_open [filter] tit var", "Opens native operating system file open dialog and returns selected path.", "sys_dialog_open \"Trappy (*.trappy)\" tit file_path"),
+    ("sys_dialog_save", "sys_dialog_save [filter] tit var", "Opens native operating system file save dialog and returns chosen path.", "sys_dialog_save \"Output (*.txt)\" tit save_path"),
+    ("ui_container", "ui_container \"style\" x:y w:h", "Draws responsive container panel with rounded corners and themed background.", "ui_container \"card\" 50:50 300:200"),
+    ("ui_tabs", "ui_tabs [tab_names] x:y w:h", "Renders interactive tabbed navigation layout with clickable tab headers.", "ui_tabs [\"Code\", \"Output\", \"Docs\"] 50:50 400:300"),
+    ("ai_conv2d", "ai_conv2d matrix kernel tit output", "Computes 2D spatial convolution across matrix using given filter kernel.", "ai_conv2d image kernel tit feature_map"),
+    ("ai_pool2d", "ai_pool2d matrix pool_w:pool_h tit output", "Performs 2D max/average pooling downsampling on input feature map.", "ai_pool2d feature_map 2:2 tit pooled"),
+    ("ai_gru_new", "ai_gru_new \"name\" input_dim hidden_dim", "Allocates and initializes a Gated Recurrent Unit (GRU) sequential neural memory layer.", "ai_gru_new \"seq_mem\" 8 16"),
+    ("ai_gru_step", "ai_gru_step \"name\" input_vec tit hidden", "Steps GRU forward through one time-step, updating internal reset and update gates.", "ai_gru_step \"seq_mem\" input_vec tit hidden_state"),
+    ("ai_audio_fft", "ai_audio_fft waveform_samples tit spectrum", "Extracts frequency magnitude spectrum from time-domain audio samples via Fast Fourier Transform.", "ai_audio_fft samples tit freq_spectrum"),
+    ("ai_ga_init", "ai_ga_init pop_size genome_size tit pop", "Initializes a genetic algorithm population with randomized genomes.", "ai_ga_init 50 10 tit population"),
+    ("ai_ga_score", "ai_ga_score organism fitness_score", "Assigns fitness score to an individual in the genetic evolution pool.", "ai_ga_score organism 98.5"),
+    ("ai_ga_reproduce", "ai_ga_reproduce pop [mutation_rate] tit new_pop", "Breeds next generation of genomes using tournament selection, crossover, and mutation.", "ai_ga_reproduce population 0.05 tit next_gen"),
+    ("os_mmu_page_alloc", "os_mmu_page_alloc pid page_bytes tit page_id", "Allocates virtual memory page frame in process address space via simulated MMU.", "os_mmu_page_alloc 1 4096 tit page_id"),
+    ("os_mmu_protect", "os_mmu_protect page_id \"RW\"|\"RO\"|\"NX\"", "Configures MMU page protection permissions (read, write, no-execute).", "os_mmu_protect page_id \"RO\""),
+    ("os_pipe", "os_pipe tit pipe_id", "Creates a virtual UNIX-style FIFO interprocess communication pipe buffer.", "os_pipe tit pipe_id"),
+    ("os_redirect_stdout", "os_redirect_stdout pipe_or_file_id", "Redirects process standard output stream into virtual pipe buffer or VFS file.", "os_redirect_stdout pipe_id"),
+    ("os_redirect_stdin", "os_redirect_stdin pipe_or_file_id", "Redirects process standard input stream to read from virtual pipe buffer or VFS file.", "os_redirect_stdin pipe_id"),
+    ("os_driver_register", "os_driver_register \"name\" \"version\"", "Registers dynamic Ring 1 hardware driver module in the kernel driver table.", "os_driver_register \"storage\" \"2.0.0\""),
+    ("os_driver_hook", "os_driver_hook \"driver_name\" \"event\"", "Hooks kernel subsystem interrupts and I/O requests into registered Ring 1 driver.", "os_driver_hook \"storage\" \"on_io\""),
 ]
 
 class TrappyIDE:
     def __init__(self, root):
         self.root = root
-        self.root.title("Trappy IDE - Official Code Studio (v1.7.0)")
+        self.root.title("Trappy IDE - Official Code Studio (v2.0.0)")
         self.root.geometry("1060x730")
         self.root.configure(bg=BG_DARK)
 
@@ -443,7 +478,7 @@ class TrappyIDE:
 
         self.status = tk.Label(
             self.root,
-            text="Ready | Trappy v1.7.0 | Discord: discord.gg/3chDfAPE9H | Press F1 for Docs, F5 to Run",
+            text="Ready | Trappy v2.0.0 | Discord: discord.gg/3chDfAPE9H | Press F1 for Docs, F5 to Run",
             bg=BG_SIDE,
             fg="#a1a1aa",
             font=("Consolas", 9),
@@ -782,7 +817,7 @@ class TrappyIDE:
         self._schedule_highlight()
 
         self.log("=====================================================================")
-        self.log("TRAPPY STUDIO IDE (v1.15.0 RELEASE)")
+        self.log("TRAPPY STUDIO IDE (v2.0.0 RELEASE)")
         self.log("Discord: https://discord.gg/3chDfAPE9H (Official Community Headquarters)")
         self.log("GitHub:  https://github.com/ashoccompany/Trappy")
         self.log("X:       https://x.com/tr4ppyai")

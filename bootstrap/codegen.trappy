@@ -1,0 +1,265 @@
+# Trappy v2.0 Bootstrap Bytecode Code Generator
+# Written 100% in Trappy language.
+# Author: ashoccompany / Asham
+# Zero generic tropes, zero external dependencies.
+
+trst
+
+fn encode_u32 n
+    mh n % 256 eq b0
+    mh (n - b0) / 256 eq rem1
+    mh rem1 % 256 eq b1
+    mh (rem1 - b1) / 256 eq rem2
+    mh rem2 % 256 eq b2
+    mh (rem2 - b2) / 256 eq rem3
+    mh rem3 % 256 eq b3
+
+    chr b0 tit c0
+    chr b1 tit c1
+    chr b2 tit c2
+    chr b3 tit c3
+    txtf "{c0}{c1}{c2}{c3}" tit res
+    return res
+tren
+
+fn encode_i64 n
+    call encode_u32 n tit low_part
+    call encode_u32 0 tit high_part
+    txtf "{low_part}{high_part}" tit res
+    return res
+tren
+
+fn emit_trpc ast
+    dget ast:"statements" tit stmts
+    llen stmts tit num_stmts
+
+    lst 0 eq const_types
+    lst 0 eq const_vals
+    lpop const_types tit d1
+    lpop const_vals tit d2
+
+    lst 0 eq instr_ops
+    lst 0 eq instr_operands
+    lpop instr_ops tit d3
+    lpop instr_operands tit d4
+
+    # Build bytecode instructions from AST
+    mh 0 eq s_idx
+    while s_idx < num_stmts
+        lget stmts:s_idx tit stmt
+        dget stmt:"type" tit st_type
+
+        ifr st_type == "ADD_VAR"
+            dget stmt:"name" tit v_name
+            dget stmt:"init" tit v_init
+
+            # Add v_name to constants
+            lpush const_types:3
+            lpush const_vals:v_name
+            llen const_vals tit c_len
+            mh c_len - 1 eq name_idx
+
+            ifr v_init != 0
+                is_alpha v_init tit is_init_a
+                ifr is_init_a == 1
+                    # Load variable
+                    lpush const_types:3
+                    lpush const_vals:v_init
+                    llen const_vals tit ic_len
+                    mh ic_len - 1 eq init_name_idx
+                    lpush instr_ops:2
+                    lpush instr_operands:init_name_idx
+                else
+                    # Push constant
+                    lpush const_types:1
+                    lpush const_vals:v_init
+                    llen const_vals tit val_len
+                    mh val_len - 1 eq val_idx
+                    lpush instr_ops:1
+                    lpush instr_operands:val_idx
+                tren
+                # Store
+                lpush instr_ops:3
+                lpush instr_operands:name_idx
+            tren
+
+        else
+            ifr st_type == "MH"
+                dget stmt:"left" tit m_left
+                dget stmt:"op" tit m_op
+                dget stmt:"right" tit m_right
+                dget stmt:"target" tit m_target
+
+                # Left operand
+                to_str m_left tit m_left_str
+                is_alpha m_left_str tit is_l_a
+                ifr is_l_a == 1
+                    lpush const_types:3
+                    lpush const_vals:m_left
+                    llen const_vals tit lc_len
+                    mh lc_len - 1 eq l_idx
+                    lpush instr_ops:2
+                    lpush instr_operands:l_idx
+                else
+                    lpush const_types:1
+                    lpush const_vals:m_left
+                    llen const_vals tit lc_len
+                    mh lc_len - 1 eq l_idx
+                    lpush instr_ops:1
+                    lpush instr_operands:l_idx
+                tren
+
+                # Right operand if op present
+                ifr m_op != ""
+                    to_str m_right tit m_right_str
+                    is_alpha m_right_str tit is_r_a
+                    ifr is_r_a == 1
+                        lpush const_types:3
+                        lpush const_vals:m_right
+                        llen const_vals tit rc_len
+                        mh rc_len - 1 eq r_idx
+                        lpush instr_ops:2
+                        lpush instr_operands:r_idx
+                    else
+                        lpush const_types:1
+                        lpush const_vals:m_right
+                        llen const_vals tit rc_len
+                        mh rc_len - 1 eq r_idx
+                        lpush instr_ops:1
+                        lpush instr_operands:r_idx
+                    tren
+
+                    ifr m_op == "+"
+                        lpush instr_ops:4
+                        lpush instr_operands:0
+                    tren
+                    ifr m_op == "-"
+                        lpush instr_ops:5
+                        lpush instr_operands:0
+                    tren
+                    ifr m_op == "*"
+                        lpush instr_ops:6
+                        lpush instr_operands:0
+                    tren
+                    ifr m_op == "/"
+                        lpush instr_ops:7
+                        lpush instr_operands:0
+                    tren
+                tren
+
+                # Store into target if present
+                ifr m_target != ""
+                    lpush const_types:3
+                    lpush const_vals:m_target
+                    llen const_vals tit tc_len
+                    mh tc_len - 1 eq t_idx
+                    lpush instr_ops:3
+                    lpush instr_operands:t_idx
+                tren
+
+            else
+                ifr st_type == "TXT"
+                    dget stmt:"value" tit t_val
+                    dget stmt:"target" tit t_target
+
+                    lpush const_types:3
+                    lpush const_vals:t_val
+                    llen const_vals tit vc_len
+                    mh vc_len - 1 eq v_idx
+                    lpush instr_ops:1
+                    lpush instr_operands:v_idx
+
+                    ifr t_target != ""
+                        lpush const_types:3
+                        lpush const_vals:t_target
+                        llen const_vals tit tc_len
+                        mh tc_len - 1 eq t_idx
+                        lpush instr_ops:3
+                        lpush instr_operands:t_idx
+                    tren
+
+                else
+                    ifr st_type == "OUT"
+                        dget stmt:"value" tit o_val
+                        to_str o_val tit o_val_str
+                        is_alpha o_val_str tit is_o_a
+                        ifr is_o_a == 1
+                            lpush const_types:3
+                            lpush const_vals:o_val
+                            llen const_vals tit oc_len
+                            mh oc_len - 1 eq o_idx
+                            lpush instr_ops:2
+                            lpush instr_operands:o_idx
+                        else
+                            lpush const_types:3
+                            lpush const_vals:o_val
+                            llen const_vals tit oc_len
+                            mh oc_len - 1 eq o_idx
+                            lpush instr_ops:1
+                            lpush instr_operands:o_idx
+                        tren
+                        # OP_OS_SYSCALL 1 (SYS_PRINT)
+                        lpush instr_ops:15
+                        lpush instr_operands:1
+                    tren
+                tren
+            tren
+        tren
+        mh s_idx + 1 eq s_idx
+    tren
+
+    # Emit OP_HALT
+    lpush instr_ops:16
+    lpush instr_operands:0
+
+    # Assemble binary TRPC file
+    chr 84 tit h0
+    chr 82 tit h1
+    chr 80 tit h2
+    chr 67 tit h3
+    chr 2 tit h4
+    chr 0 tit h5
+    txtf "{h0}{h1}{h2}{h3}{h4}{h5}" tit header
+
+    llen const_vals tit num_consts
+    call encode_u32 num_consts tit const_count_bin
+
+    txt "" tit consts_bin
+    mh 0 eq ci
+    while ci < num_consts
+        lget const_types:ci tit ct
+        lget const_vals:ci tit cv
+        chr ct tit ct_byte
+        ifr ct == 1
+            to_num cv tit cv_num
+            call encode_i64 cv_num tit cv_bin
+            txtf "{consts_bin}{ct_byte}{cv_bin}" tit consts_bin
+        else
+            to_str cv tit cv_str
+            slen cv_str tit cv_slen
+            call encode_u32 cv_slen tit slen_bin
+            txtf "{consts_bin}{ct_byte}{slen_bin}{cv_str}" tit consts_bin
+        tren
+        mh ci + 1 eq ci
+    tren
+
+    llen instr_ops tit num_instrs
+    call encode_u32 num_instrs tit instr_count_bin
+
+    txt "" tit instrs_bin
+    mh 0 eq ii
+    while ii < num_instrs
+        lget instr_ops:ii tit i_op
+        lget instr_operands:ii tit i_rand
+        chr i_op tit op_byte
+        call encode_u32 i_rand tit rand_bin
+        txtf "{instrs_bin}{op_byte}{rand_bin}" tit instrs_bin
+        mh ii + 1 eq ii
+    tren
+
+    txtf "{header}{const_count_bin}{consts_bin}{instr_count_bin}{instrs_bin}" tit full_trpc
+    return full_trpc
+tren
+
+tren
+

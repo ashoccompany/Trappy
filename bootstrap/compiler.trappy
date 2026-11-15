@@ -1,0 +1,27 @@
+# Trappy v2.0 Pure Self-Hosting Compiler
+# Written 100% in Trappy language.
+# Author: ashoccompany / Asham
+# Zero generic tropes, zero external dependencies.
+
+trst
+
+loadpk "bootstrap/lexer.trappy" tit lexer
+loadpk "bootstrap/parser.trappy" tit parser
+loadpk "bootstrap/codegen.trappy" tit codegen
+
+fn compile_source src
+    call lexer.tokenize_trappy src tit tokens
+    call parser.parse_trappy tokens tit ast
+    call codegen.emit_trpc ast tit bytecode
+    return bytecode
+tren
+
+fn compile_file src_path:out_path
+    file_read src_path tit src
+    call compile_source src tit bytecode
+    file_write out_path:bytecode
+    return 1
+tren
+
+tren
+

@@ -1,4 +1,4 @@
-# Trappy Programming Language - Official Reference Manual (v1.7.0 Release)
+# Trappy Programming Language - Official Reference Manual (v2.0.0 Release)
 
 Copyright (c) Trappy Language Project. All rights reserved.  
 Official File Extension: `.trappy`  
@@ -40,6 +40,10 @@ Standalone Studio: `TrappyIDE.exe`
 24. [OS Development & Security Architecture](#24-os-development--security-architecture)
 25. [Modern UI/GUI Suite](#25-modern-uigui-suite)
 26. [Micro-AI Development Engine](#26-micro-ai-development-engine)
+27. [Trappy v2.0 Pure Scratch-Built Grammar & Modern Ergonomics](#27-trappy-v20-pure-scratch-built-grammar--modern-ergonomics)
+28. [Advanced Graphics, Sound & UI Suite 2.0](#28-advanced-graphics-sound--ui-suite-20)
+29. [Micro-AI 2.0: Convolutions, GRU Recurrence & Genetic Evolution](#29-micro-ai-20-convolutions-gru-recurrence--genetic-evolution)
+30. [TrappyOS 2.0 & The Pure-Trappy Self-Hosting TVM Compiler](#30-trappyos-20--the-pure-trappy-self-hosting-tvm-compiler)
 
 ---
 
@@ -628,3 +632,227 @@ tren
 * `os_ai_anomaly_check`: Kernel AI telemetry scanner detecting abnormal CPU, memory, and syscall spikes.
 * `os_ai_assistant`: Interactive conversational assistant for kernel diagnosis, system queries, and security remediation.
 * `[...]`: Native bracket syntax for multi-dimensional lists, matrices, layers, and coordinate arrays.
+
+---
+
+## 27. Trappy v2.0 Pure Scratch-Built Grammar & Modern Ergonomics
+
+Trappy v2.0 introduces a 100% original grammar built entirely from scratch, replacing generic tropes from other languages with unique keywords and clean syntax.
+
+### 27.1 Module Loading with `loadpk`
+Instead of standard borrowed imports, Trappy v2 uses `loadpk` to load and dynamically link module packages:
+```trappy
+trst
+    loadpk "math_utils.trappy" tit mutils
+    call mutils.square 7 tit result
+    out result
+tren
+```
+
+### 27.2 Multi-Branch Control Flow with `efr`
+Chained conditional branches use `efr` (Else-IFr) cleanly terminating with `else` and `tren`:
+```trappy
+trst
+    ifr score >= 90
+        txt "S Rank" tit rank
+    efr score >= 80
+        txt "A Rank" tit rank
+    efr score >= 70
+        txt "B Rank" tit rank
+    else
+        txt "F Rank" tit rank
+    tren
+tren
+```
+
+### 27.3 Pattern Matching with `brch`, `cas`, and `othr`
+Pattern branching allows structured matching with fallback handling:
+```trappy
+trst
+    brch action
+        cas "IDLE"
+            out "Standing still"
+        cas "ATTACK"
+            mh 50 eq damage
+        othr
+            out "Unknown command"
+    tren
+tren
+```
+
+### 27.4 Formatted String Interpolation with `txtf`
+Interpolate variables and arithmetic directly into formatted text strings:
+```trappy
+trst
+    txt "Alex" tit player
+    mh 4200 eq score
+    txtf "Champion {player} scored {score} points!" tit banner
+    out banner
+tren
+```
+
+### 27.5 Direct Bracket Indexing & Assignment
+Index and update lists and multi-dimensional matrices directly:
+```trappy
+trst
+    lst [10, 20, 30] eq stats
+    stats[0] = 99
+    stats[1] eq 50
+    out stats[0]
+tren
+```
+
+### 27.6 Dictionary Manifest Literals
+Initialize complex nested dictionaries with clean key-value syntax:
+```trappy
+trst
+    add_var hero: {
+        "name": "Knight",
+        "level": 10,
+        "attributes": {
+            "str": 45,
+            "dex": 20
+        }
+    }
+    hero["attributes"]["str"] = 50
+tren
+```
+
+### 27.7 Compound Boolean Precedence & Function Delimiters
+Compound conditions support `and`, `or`, `not`, `&&`, `||`, `!` with short-circuit evaluation:
+```trappy
+trst
+    ifr health > 0 and (shield > 50 or is_buffed == 1)
+        out "Hero is protected"
+    tren
+tren
+```
+Function parameters can be delimited with `:` or `,`:
+```trappy
+trst
+    fn add_two a:b
+        mh a + b eq sum
+        return sum
+    tren
+    call add_two(10, 20) tit ans
+tren
+```
+
+---
+
+## 28. Advanced Graphics, Sound & UI Suite 2.0
+
+### 28.1 3D Perspective Projection Camera & Shaded Polygons
+```trappy
+trst
+    cam3d 0:150:400 0:0:0 60
+    poly3d [[0, 50, 0], [-25, 0, -25], [25, 0, -25]] cyan
+tren
+```
+
+### 28.2 2D Tilemap Level Engine
+```trappy
+trst
+    tilemap_init 20 15 32:32
+    tilemap_draw "level1" 0:0
+tren
+```
+
+### 28.3 Particle Physics Emitter & ADSR Sound Synthesis
+```trappy
+trst
+    particle_emitter 200:150 "spark" 30 500
+    synth_adsr 440 0.05 0.1 0.7 0.2
+tren
+```
+
+### 28.4 Host Clipboard & File Chooser Dialogs
+```trappy
+trst
+    sys_clipboard_set "Trappy Engine"
+    sys_clipboard_get tit clip
+    sys_dialog_open "Trappy Files (*.trappy)" tit selected_file
+tren
+```
+
+### 28.5 Responsive Containers & Tab Navigation
+```trappy
+trst
+    ui_container "card" 50:50 300:200
+    ui_tabs ["Editor", "Console", "Docs"] 50:50 400:300
+tren
+```
+
+---
+
+## 29. Micro-AI 2.0: Convolutions, GRU Recurrence & Genetic Evolution
+
+### 29.1 2D Convolutions & Pooling
+```trappy
+trst
+    ai_conv2d input_matrix kernel tit feature_map
+    ai_pool2d feature_map 2:2 tit pooled_map
+tren
+```
+
+### 29.2 Gated Recurrent Unit (GRU) Sequential Memory
+```trappy
+trst
+    ai_gru_new "memory_cell" 8 16
+    ai_gru_step "memory_cell" input_vec tit hidden_state
+tren
+```
+
+### 29.3 Audio FFT Spectrum & Genetic Optimization
+```trappy
+trst
+    ai_audio_fft waveform_samples tit spectrum
+    ai_ga_init 50 10 tit population
+    ai_ga_score population[0] 98.5
+    ai_ga_reproduce population 0.05 tit next_gen
+tren
+```
+
+---
+
+## 30. TrappyOS 2.0 & The Pure-Trappy Self-Hosting TVM Compiler
+
+### 30.1 Simulated MMU Paging & Virtual UNIX Pipes
+```trappy
+trst
+    os_mmu_page_alloc 1 4096 tit page_id
+    os_mmu_protect page_id "RO"
+    os_pipe tit pipe_id
+    os_redirect_stdout pipe_id
+    os_driver_register "display_adapter" "2.0.0"
+    os_driver_hook "display_adapter" "on_render"
+tren
+```
+
+### 30.2 Trappy Virtual Machine (TVM) 16-Opcode Architecture
+The Trappy Virtual Machine (TVM) executes compiled `.trpc` bytecode binaries with native speed:
+* `0x01` `OP_CONST`: Push constant literal onto stack
+* `0x02` `OP_LOAD`: Load variable from scope onto stack
+* `0x03` `OP_STORE`: Store top of stack into variable
+* `0x04` `OP_ADD`: Pop b, pop a, push a + b
+* `0x05` `OP_SUB`: Pop b, pop a, push a - b
+* `0x06` `OP_MUL`: Pop b, pop a, push a * b
+* `0x07` `OP_DIV`: Pop b, pop a, push a / b
+* `0x08` `OP_INDEX_GET`: Pop index, pop container, push element
+* `0x09` `OP_INDEX_SET`: Pop value, pop index, pop container, update element
+* `0x0A` `OP_JUMP`: Unconditional jump to offset
+* `0x0B` `OP_JUMP_IF_FALSE`: Jump if condition is false
+* `0x0C` `OP_CALL`: Call function with argument frame
+* `0x0D` `OP_RETURN`: Return from function
+* `0x0E` `OP_LOADPK`: Dynamically link module
+* `0x0F` `OP_OS_SYSCALL`: Dispatch system call (1: print, 2: input, 3: file_read, 4: file_write)
+* `0x10` `OP_HALT`: Terminate execution
+
+### 30.3 Pure-Trappy Self-Hosting Compiler
+The compiler is written 100% in Trappy language across modular source files:
+* `bootstrap/lexer.trappy`: Source string tokenization
+* `bootstrap/parser.trappy`: Recursive-descent AST dictionary generator
+* `bootstrap/codegen.trappy`: TVM bytecode emitter generating `.trpc` binaries
+* `bootstrap/compiler.trappy`: Master compiler driver
+Both Python (`tvm_runtime.py`) and zero-dependency ANSI C (`tvm.exe`) runners execute `.trpc` binaries bit-for-bit identically.
+
