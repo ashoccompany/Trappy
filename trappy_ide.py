@@ -851,20 +851,25 @@ class TrappyIDE:
         self.clear_console()
         self.log("[TRAPPY RUNNER]: Launching program execution...")
 
-        import shutil
-        py_runner = shutil.which("python") or shutil.which("python3")
-        if not py_runner:
-            for candidate in (r"C:\Python315\python.exe", r"C:\Python314\python.exe", r"C:\Python313\python.exe", r"C:\Python312\python.exe", r"C:\Python311\python.exe"):
-                if os.path.exists(candidate):
-                    py_runner = candidate
-                    break
-        if not py_runner:
-            py_runner = "python"
-
+        native_runner = os.path.join(base_dir, "trappy.exe")
         trappy_script = os.path.join(base_dir, "trappy.py")
+        if not os.path.exists(trappy_script):
+            trappy_script = os.path.join(base_dir, "bootstrap", "stage0", "trappy_stage0.py")
 
         def run_thread():
-            cmd = [py_runner, trappy_script, temp_path]
+            if os.path.exists(native_runner):
+                cmd = [native_runner, temp_path]
+            else:
+                import shutil
+                py_runner = shutil.which("python") or shutil.which("python3")
+                if not py_runner:
+                    for candidate in (r"C:\Python315\python.exe", r"C:\Python314\python.exe", r"C:\Python313\python.exe", r"C:\Python312\python.exe", r"C:\Python311\python.exe"):
+                        if os.path.exists(candidate):
+                            py_runner = candidate
+                            break
+                if not py_runner:
+                    py_runner = "python"
+                cmd = [py_runner, trappy_script, temp_path]
 
             try:
                 proc = subprocess.Popen(

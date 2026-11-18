@@ -19,6 +19,7 @@ class TestTrappyBootstrapV2(unittest.TestCase):
         self.tmp_dir = tempfile.mkdtemp(prefix="trappy_tvm_test_")
         self.repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         self.tvm_exe = os.path.join(self.repo_root, "tvm.exe")
+        self.trappy_exe = os.path.join(self.repo_root, "trappy.exe")
 
     def tearDown(self):
         import shutil
@@ -164,6 +165,35 @@ tren
 
         self.assertEqual(data1, data2)
         self.assertTrue(data1.startswith(tvm.MAGIC_HEADER))
+
+    def test_trappy_native_exe_execution(self):
+        if not os.path.exists(self.trappy_exe):
+            self.skipTest("trappy.exe not found")
+
+        sample_src = os.path.join(self.tmp_dir, "test_native_calc.trappy")
+        with open(sample_src, "w", encoding="utf-8") as f:
+            f.write("trst\n  mh 100 * 5 eq res\n  out res\ntren\n")
+
+        proc = subprocess.run([self.trappy_exe, sample_src], capture_output=True, text=True, check=True)
+        self.assertEqual(proc.stdout.strip(), "500")
+
+    def test_trappy_native_exe_compilation_and_bytecode_run(self):
+        if not os.path.exists(self.trappy_exe):
+            self.skipTest("trappy.exe not found")
+
+        sample_src = os.path.join(self.tmp_dir, "test_native_compile.trappy")
+        sample_trpc = os.path.join(self.tmp_dir, "test_native_compile.trpc")
+        with open(sample_src, "w", encoding="utf-8") as f:
+            f.write("trst\n  txt \"Native Trappy Self-Host\" tit title\n  txtf \"Engine: {title}\" tit msg\n  out msg\ntren\n")
+
+        # Compile with -c
+        proc_comp = subprocess.run([self.trappy_exe, "-c", sample_src, "-o", sample_trpc], capture_output=True, text=True, check=True)
+        self.assertIn("Compiled", proc_comp.stdout)
+        self.assertTrue(os.path.exists(sample_trpc))
+
+        # Run .trpc directly
+        proc_run = subprocess.run([self.trappy_exe, sample_trpc], capture_output=True, text=True, check=True)
+        self.assertEqual(proc_run.stdout.strip(), "Engine: Native Trappy Self-Host")
 
 
 if __name__ == "__main__":
